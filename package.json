@@ -3,31 +3,25 @@
   "version": "0.0.9",
   "description": "Homebridge Plugin for Mode Lighting",
   "main": "index.js",
-
   "dependencies": {
-    "request": "^=2.88.0"
+    "request": "^=2.88.0",
+    "xml2js": "^0.4.23"
   },
-
   "devDependencies": {},
-
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-
   "repository": {
     "type": "git",
     "url": "https://github.com/homeautomator/homebridge-modelighting/"
   },
-
   "keywords": [
     "homebridge-plugin"
   ],
-
   "engines": {
     "node": ">=0.12.0",
     "homebridge": ">=0.2.0"
   },
-
   "author": "homeautomator",
   "license": "ISC"
 }

@@ -2,16 +2,15 @@
 // Need to enhance with more error checking
 
 var request = require('request');
+var parseXMLString = require('xml2js').parseString;
 
 var Service, Characteristic;
 
 module.exports = function(homebridge) {
-
   // Service and Characteristic are from hap-nodejs
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
-  homebridge.registerAccessory("homebridge-modelighting", "modelighting",
-    ModeLightingAccessory);
+  homebridge.registerAccessory("homebridge-modelightingv1", "modelightingv1", ModeLightingAccessory);
 }
 
 function ModeLightingAccessory(log, config) {
@@ -31,80 +30,72 @@ function ModeLightingAccessory(log, config) {
   }
 }
 
-function ModeInterface(NPU_IP, cmd, scene, callback) {
+function ModeSetScene(NPU_IP, scene, callback) {
+  var payload = '<?xml version="1.0"?><methodCall>\n<methodName>fadeScene</methodName><params><param>'+scene+'</param></params></methodCall>';
+  var options = {
+    url: 'http://' + NPU_IP + '/xml-rpc?1',
+    contentType: 'application/xml',
+    method: 'POST',
+    headers: {
+      'Content-Length': Buffer.byteLength(payload, 'utf8'),
+      'Content-Type': 'application/xml'
+    },
+    body: Buffer.from(payload, 'utf8')
+  };
+  request.post(options,
+    function(error, response, body) {
+      console.log('NPU: ' + NPU_IP + ' cmd: fadeScene scene: ' + scene);
+      if (error) {
+        console.log('WebServer Response is: ' + error);
+        console.log('Error Code is: ' + error.code);
+      } else if (response.statusCode > 200) {
+        console.log('WebServer Response is: ' + response.statusCode);
+        console.log('Error Code is: ' + response.statusMessage);
+      } else {
+        callback(null, 0);
+      }
+    }
+  );
+}
+function ModeGetScene(NPU_IP, scene, callback) {
+  var options = {
+    url: 'http://' + NPU_IP + '/xml-dump?nocrlf=true&what=status&where='+scene,
+    contentType: 'application/xml'
+  };
+  request.get(options,
+    function(error, response, body) {
+      console.log('NPU: ' + NPU_IP + ' getscene: ' + scene);
+      if (error) {
+        console.log('WebServer Response is: ' + error);
+        console.log('Error Code is: ' + error.code);
+      } else if (response.statusCode > 200) {
+        console.log('WebServer Response is: ' + response.statusCode);
+        console.log('Error Code is: ' + response.statusMessage);
+      } else {
+        console.log('WebServer request result: ' + body);
+        parseXMLString(body, function (err, result) {
+          console.log('WebServer XML result: ' + result);
+          var active = result.Evolution.Scene[0].Active[0];
+          callback(null, active);
+          console.dir(result);
+        });
+      }
+    }
+  );
+}
 
-  var cntr = 0;
-
-  function ModeInterfaceRetry(NPU_IP, cmd, scene, callback) {
-
-    request.post(
-      'http://' + NPU_IP + '/gateway?', {
-        json: {
-          contentType: 'text/plain',
-          dataType: 'text',
-          timeout: 1500,
-          data: cmd + scene + ';'
-        }
-      },
-      function(error, response, body) {
-
-        ++cntr;
-
-        console.log('NPU: ' + NPU_IP + ' cmd: ' + cmd + ' scene: ' + scene +
-          ' attempt number: ' + cntr);
-
-        if (error) {
-
-          console.log('WebServer Response is: ' + error);
-          console.log('Error Code is: ' + error.code);
-
-          if (cntr >= 5) {
-            // if it fails too many times then return
-            console.log('cmd: ' + cmd + ' scene: ' + scene +
-              ' - unable to communicate to with Mode NPU WebServer');
-            callback(null, 0);
-          } else {
-            // try again after a delay
-            setTimeout(ModeInterfaceRetry, 500, NPU_IP, cmd, scene, callback);
-          }
-        } // Error
-        else {
-
-          if (cmd == "$scnrecall,") {
-            callback(null, 0);
-          } else if (cmd == "?scn," && body != "") {
-            // Get Light Status & Return through callback
-            var pos = body.lastIndexOf(";");
-            callback(null, body.substring(pos - 5, pos - 4));
-          } else {
-            console.log('Unexpected body from WebServer. Body is: ' + body);
-            callback(null, 0); // Default to Off
-          } // Inner else
-        } // else
-      } // request.post callback function
-    ); // request.post function call
-  } // ModeInterfaceRetry
-
-  ModeInterfaceRetry(NPU_IP, cmd, scene, callback);
-
-} // ModeInterface
 
 ModeLightingAccessory.prototype = {
-
   getPowerState: function(callback) {
-    ModeInterface(this.NPU_IP, "?scn,", this.on_scene, callback);
+    ModeGetScene(this.NPU_IP, this.on_scene, callback);
   },
-
   setPowerState: function(powerOn, callback) {
-    ModeInterface(this.NPU_IP, "$scnrecall,",
-      powerOn ? this.on_scene : this.off_scene, callback);
+    ModeSetScene(this.NPU_IP, powerOn ? this.on_scene : this.off_scene, callback);
   },
-
   identify: function(callback) {
     this.log("identify: Identify requested!");
     callback(); // success
   },
-
   getServices: function() {
 
     // you can OPTIONALLY create an information service if you wish to override
@@ -113,7 +104,7 @@ ModeLightingAccessory.prototype = {
 
     informationService
       .setCharacteristic(Characteristic.Manufacturer, "Mode Lighting")
-      .setCharacteristic(Characteristic.Model, "NPU SW000120.2.3.6.3")
+      .setCharacteristic(Characteristic.Model, "NPU v1.3.2.1")
       .setCharacteristic(Characteristic.SerialNumber, "");
 
     var switchService = new Service.Switch(this.name);
