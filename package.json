@@ -1,7 +1,7 @@
 {
-  "name": "homebridge-modelighting",
+  "name": "homebridge-modelightingv1",
   "version": "0.0.9",
-  "description": "Homebridge Plugin for Mode Lighting",
+  "description": "Homebridge Plugin for Mode Lighting version 1 firmware",
   "main": "index.js",
   "dependencies": {
     "request": "^=2.88.0",
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/homeautomator/homebridge-modelighting/"
+    "url": "git+https://github.com/maxlyth/homebridge-modelightingv1.git"
   },
   "keywords": [
     "homebridge-plugin"
@@ -23,5 +23,9 @@
     "homebridge": ">=0.2.0"
   },
   "author": "homeautomator",
-  "license": "ISC"
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/maxlyth/homebridge-modelightingv1/issues"
+  },
+  "homepage": "https://github.com/maxlyth/homebridge-modelightingv1#readme"
 }
