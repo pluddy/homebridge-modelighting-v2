@@ -46,20 +46,20 @@ function ModeSetScene(NPU_IP, scene, callback, trycount = 0) {
     function(error, response, body) {
       if (error) {
         if (trycount < 3) {
-          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
+          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
           setTimeout(ModeSetScene(NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
+          this.log('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
         }
       } else if (response.statusCode > 200) {
         if (trycount < 3) {
-          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
+          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
           setTimeout(ModeSetScene(NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
+          this.log('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
         }
       } else {
-        this.log.info('NPU:' + NPU_IP + ', cmd:fadeScene, scene: ' + scene + ', try:'+trycount);
+        this.log('NPU:' + NPU_IP + ', cmd:fadeScene, scene: ' + scene + ', try:'+trycount);
         callback(null, 0);
       }
     }
@@ -74,23 +74,23 @@ function ModeGetScene(NPU_IP, scene, callback, trycount = 0) {
     function(error, response, body) {
       if (error) {
         if (trycount < 3) {
-          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
+          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
           setTimeout(ModeGetScene(NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
+          this.log('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
         }
       } else if (response.statusCode > 200) {
         if (trycount < 3) {
-          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
+          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
           setTimeout(ModeGetScene(NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
+          this.log('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
         }
       } else {
         //this.log('WebServer request result: ' + body);
         parseXMLString(body, function (err, result) {
           var active = result.Evolution.Scene[0].Active[0];
-          this.log.info('NPU:' + NPU_IP + ', getscene:' + scene + ', active:' + active + ', try:'+trycount);
+          this.log('NPU:' + NPU_IP + ', getscene:' + scene + ', active:' + active + ', try:'+trycount);
           callback(null, active);
         });
       }
