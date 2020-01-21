@@ -44,14 +44,12 @@ function ModeSetScene(NPU_IP, scene, callback) {
   };
   request.post(options,
     function(error, response, body) {
-      console.log('NPU: ' + NPU_IP + ' cmd: fadeScene scene: ' + scene);
       if (error) {
-        console.log('WebServer Response is: ' + error);
-        console.log('Error Code is: ' + error.code);
+        console.log('Setscene: '+ scene +' error: ' + error +', code:'+error.code);
       } else if (response.statusCode > 200) {
-        console.log('WebServer Response is: ' + response.statusCode);
-        console.log('Error Code is: ' + response.statusMessage);
+        console.log('Setscene: '+ scene +' response: ' + response.statusMessage +', code:'+response.statusCode);
       } else {
+        console.log('NPU: ' + NPU_IP + ' cmd: fadeScene scene: ' + scene);
         callback(null, 0);
       }
     }
@@ -64,20 +62,16 @@ function ModeGetScene(NPU_IP, scene, callback) {
   };
   request.get(options,
     function(error, response, body) {
-      console.log('NPU: ' + NPU_IP + ' getscene: ' + scene);
       if (error) {
-        console.log('WebServer Response is: ' + error);
-        console.log('Error Code is: ' + error.code);
+        console.log('Getscene: '+ scene +' error: ' + error +', code:'+error.code);
       } else if (response.statusCode > 200) {
-        console.log('WebServer Response is: ' + response.statusCode);
-        console.log('Error Code is: ' + response.statusMessage);
+        console.log('Getscene: '+ scene +' response: ' + response.statusMessage +', code:'+response.statusCode);
       } else {
-        console.log('WebServer request result: ' + body);
+        //console.log('WebServer request result: ' + body);
         parseXMLString(body, function (err, result) {
-          console.log('WebServer XML result: ' + result);
           var active = result.Evolution.Scene[0].Active[0];
+          console.log('NPU: ' + NPU_IP + ' getscene: ' + scene + 'result:' + active);
           callback(null, active);
-          console.dir(result);
         });
       }
     }
@@ -101,19 +95,17 @@ ModeLightingAccessory.prototype = {
     // you can OPTIONALLY create an information service if you wish to override
     // the default values for things like serial number, model, etc.
     var informationService = new Service.AccessoryInformation();
-
     informationService
       .setCharacteristic(Characteristic.Manufacturer, "Mode Lighting")
       .setCharacteristic(Characteristic.Model, "NPU v1.3.2.1")
-      .setCharacteristic(Characteristic.SerialNumber, "");
+      .setCharacteristic(Characteristic.SerialNumber, "123456");
 
     var switchService = new Service.Switch(this.name);
-
     switchService
       .getCharacteristic(Characteristic.On)
       .on('set', this.setPowerState.bind(this))
       .on('get', this.getPowerState.bind(this));
 
-    return [switchService];
+    return [informationService, switchService];
   }
 };
