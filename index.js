@@ -47,14 +47,14 @@ function ModeSetScene(log, NPU_IP, scene, callback, trycount = 0) {
       if (error) {
         if (trycount < 3) {
           log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
-          setTimeout(ModeSetScene(log, NPU_IP, scene, callback, trycount+1), 500);
+          setTimeout(ModeSetScene, 500, log, NPU_IP, scene, callback, trycount+1);
         } else {
           log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
         }
       } else if (response.statusCode > 200) {
         if (trycount < 3) {
           log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
-          setTimeout(ModeSetScene(log, NPU_IP, scene, callback, trycount+1), 500);
+          setTimeout(ModeSetScene, 500, log, NPU_IP, scene, callback, trycount+1);
         } else {
           log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
         }
@@ -75,14 +75,14 @@ function ModeGetScene(log, NPU_IP, scene, callback, trycount = 0) {
       if (error) {
         if (trycount < 3) {
           log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
-          setTimeout(ModeGetScene(log, NPU_IP, scene, callback, trycount+1), 500);
+          setTimeout(ModeGetScene, 500, log, NPU_IP, scene, callback, trycount+1);
         } else {
           log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
         }
       } else if (response.statusCode > 200) {
         if (trycount < 3) {
           log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
-          setTimeout(ModeGetScene(log, NPU_IP, scene, callback, trycount+1), 500);
+          setTimeout(ModeGetScene, 500, log, NPU_IP, scene, callback, trycount+1);
         } else {
           log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
         }
