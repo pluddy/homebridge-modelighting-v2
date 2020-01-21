@@ -30,7 +30,7 @@ function ModeLightingAccessory(log, config) {
   }
 }
 
-function ModeSetScene(NPU_IP, scene, callback, trycount = 0) {
+function ModeSetScene(log, NPU_IP, scene, callback, trycount = 0) {
   var payload = '<?xml version="1.0"?><methodCall>\n<methodName>fadeScene</methodName><params><param>'+scene+'</param></params></methodCall>';
   var options = {
     url: 'http://' + NPU_IP + '/xml-rpc?1',
@@ -46,26 +46,26 @@ function ModeSetScene(NPU_IP, scene, callback, trycount = 0) {
     function(error, response, body) {
       if (error) {
         if (trycount < 3) {
-          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
-          setTimeout(ModeSetScene(NPU_IP, scene, callback, trycount+1), 500);
+          log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
+          setTimeout(ModeSetScene(log, NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
+          log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
         }
       } else if (response.statusCode > 200) {
         if (trycount < 3) {
-          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
-          setTimeout(ModeSetScene(NPU_IP, scene, callback, trycount+1), 500);
+          log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
+          setTimeout(ModeSetScene(log, NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
+          log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
         }
       } else {
-        this.log('NPU:' + NPU_IP + ', cmd:fadeScene, scene: ' + scene + ', try:'+trycount);
+        log.info('NPU:' + NPU_IP + ', cmd:fadeScene, scene: ' + scene + ', try:'+trycount);
         callback(null, 0);
       }
     }
   );
 }
-function ModeGetScene(NPU_IP, scene, callback, trycount = 0) {
+function ModeGetScene(log, NPU_IP, scene, callback, trycount = 0) {
   var options = {
     url: 'http://' + NPU_IP + '/xml-dump?nocrlf=true&what=status&where='+scene,
     contentType: 'application/xml'
@@ -74,23 +74,23 @@ function ModeGetScene(NPU_IP, scene, callback, trycount = 0) {
     function(error, response, body) {
       if (error) {
         if (trycount < 3) {
-          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
-          setTimeout(ModeGetScene(NPU_IP, scene, callback, trycount+1), 500);
+          log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
+          setTimeout(ModeGetScene(log, NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
+          log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
         }
       } else if (response.statusCode > 200) {
         if (trycount < 3) {
-          this.log('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
-          setTimeout(ModeGetScene(NPU_IP, scene, callback, trycount+1), 500);
+          log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
+          setTimeout(ModeGetScene(log, NPU_IP, scene, callback, trycount+1), 500);
         } else {
-          this.log('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
+          log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
         }
       } else {
-        //this.log('WebServer request result: ' + body);
+        //log.debug('WebServer request result: ' + body);
         parseXMLString(body, function (err, result) {
           var active = result.Evolution.Scene[0].Active[0];
-          this.log('NPU:' + NPU_IP + ', getscene:' + scene + ', active:' + active + ', try:'+trycount);
+          log.info('NPU:' + NPU_IP + ', getscene:' + scene + ', active:' + active + ', try:'+trycount);
           callback(null, active);
         });
       }
@@ -101,10 +101,10 @@ function ModeGetScene(NPU_IP, scene, callback, trycount = 0) {
 
 ModeLightingAccessory.prototype = {
   getPowerState: function(callback) {
-    ModeGetScene(this.NPU_IP, this.on_scene, callback);
+    ModeGetScene(this.log, this.NPU_IP, this.on_scene, callback);
   },
   setPowerState: function(powerOn, callback) {
-    ModeSetScene(this.NPU_IP, powerOn ? this.on_scene : this.off_scene, callback);
+    ModeSetScene(this.log, this.NPU_IP, powerOn ? this.on_scene : this.off_scene, callback);
   },
   identify: function(callback) {
     this.log("identify: Identify requested!");
