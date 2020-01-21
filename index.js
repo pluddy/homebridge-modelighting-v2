@@ -11,17 +11,17 @@ module.exports = function(homebridge) {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   homebridge.registerAccessory("homebridge-modelightingv1", "modelightingv1", ModeLightingAccessory);
-}
+};
 
 function ModeLightingAccessory(log, config) {
   this.log = log;
 
   // Get config.json informatio for NPU IP Address, Room Name,
   // On Scene Number and Off Scene Number
-  this.NPU_IP = config["NPU_IP"];
-  this.name = config["name"];
-  this.on_scene = config["on_scene"];
-  this.off_scene = config["off_scene"];
+  this.NPU_IP = config.NPU_IP;
+  this.name = config.name;
+  this.on_scene = config.on_scene;
+  this.off_scene = config.off_scene;
 
   if (!this.name || !this.on_scene || !this.off_scene || !this.NPU_IP) {
     this.log('Invalid entry in config.json');
@@ -30,7 +30,7 @@ function ModeLightingAccessory(log, config) {
   }
 }
 
-function ModeSetScene(NPU_IP, scene, callback) {
+function ModeSetScene(NPU_IP, scene, callback, trycount = 0) {
   var payload = '<?xml version="1.0"?><methodCall>\n<methodName>fadeScene</methodName><params><param>'+scene+'</param></params></methodCall>';
   var options = {
     url: 'http://' + NPU_IP + '/xml-rpc?1',
@@ -45,17 +45,27 @@ function ModeSetScene(NPU_IP, scene, callback) {
   request.post(options,
     function(error, response, body) {
       if (error) {
-        console.log('Setscene: '+ scene +' error: ' + error +', code:'+error.code);
+        if (trycount < 3) {
+          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
+          setTimeout(ModeSetScene(NPU_IP, scene, callback, trycount+1), 500);
+        } else {
+          this.log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', error: ' + error +', code:'+error.code);
+        }
       } else if (response.statusCode > 200) {
-        console.log('Setscene: '+ scene +' response: ' + response.statusMessage +', code:'+response.statusCode);
+        if (trycount < 3) {
+          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
+          setTimeout(ModeSetScene(NPU_IP, scene, callback, trycount+1), 500);
+        } else {
+          this.log.error('FAIL! NPU:' + NPU_IP + ', cmd:fadeScene, scene: '+ scene +', response: ' + response.statusMessage +', code:'+response.statusCode);
+        }
       } else {
-        console.log('NPU: ' + NPU_IP + ' cmd: fadeScene scene: ' + scene);
+        this.log.info('NPU:' + NPU_IP + ', cmd:fadeScene, scene: ' + scene + ', try:'+trycount);
         callback(null, 0);
       }
     }
   );
 }
-function ModeGetScene(NPU_IP, scene, callback) {
+function ModeGetScene(NPU_IP, scene, callback, trycount = 0) {
   var options = {
     url: 'http://' + NPU_IP + '/xml-dump?nocrlf=true&what=status&where='+scene,
     contentType: 'application/xml'
@@ -63,14 +73,24 @@ function ModeGetScene(NPU_IP, scene, callback) {
   request.get(options,
     function(error, response, body) {
       if (error) {
-        console.log('Getscene: '+ scene +' error: ' + error +', code:'+error.code);
+        if (trycount < 3) {
+          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
+          setTimeout(ModeGetScene(NPU_IP, scene, callback, trycount+1), 500);
+        } else {
+          this.log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', error:' + error +', code:'+error.code);
+        }
       } else if (response.statusCode > 200) {
-        console.log('Getscene: '+ scene +' response: ' + response.statusMessage +', code:'+response.statusCode);
+        if (trycount < 3) {
+          this.log.warn('Retry:'+(trycount+1)+', NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
+          setTimeout(ModeGetScene(NPU_IP, scene, callback, trycount+1), 500);
+        } else {
+          this.log.error('FAIL! NPU:' + NPU_IP + ', getscene:'+ scene +', response:' + response.statusMessage +', code:'+response.statusCode);
+        }
       } else {
-        //console.log('WebServer request result: ' + body);
+        //this.log('WebServer request result: ' + body);
         parseXMLString(body, function (err, result) {
           var active = result.Evolution.Scene[0].Active[0];
-          console.log('NPU: ' + NPU_IP + ' getscene: ' + scene + 'result:' + active);
+          this.log.info('NPU:' + NPU_IP + ', getscene:' + scene + ', active:' + active + ', try:'+trycount);
           callback(null, active);
         });
       }
