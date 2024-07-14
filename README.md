@@ -27,15 +27,17 @@ Configuration sample:
 		{
 			"accessory": "modelightingv1",
 			"NPU_IP": "192.168.0.1",
-			"name": "Living Room",
-			"on_scene": "001",
-			"off_scene": "002"
+			"name": "Bedroom Lamp",
+			"channel": "001",
+			"dimmable": true,
+			"defaultBrightness": 80
 		},
 		{
 			"accessory": "modelightingv1",
 			"NPU_IP": "192.168.0.1",
-			"name": "Kitchen",
-			"on_scene": "003",
-			"off_scene": "004"
+			"name": "Kitchen Table",
+			"channel": "001",
+			"dimmable": true,
+			"defaultBrightness": 80
 		}
 	]
