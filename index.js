@@ -116,7 +116,7 @@ ModeLightingAccessory.prototype = {
     ModeSetChannel(this.log, this.NPU_IP, this.channel, powerOn ? this.defaultBrightness : 0, callback);
   },
   getBrightness: function(callback) {
-    ModeGetChannel(this.log, this.NPU_IP, this.channel, (percent) => callback(percent));
+    ModeGetChannel(this.log, this.NPU_IP, this.channel, (percent) => callback(null, percent));
   },
   setBrightness: function(brightness, callback) {
     ModeSetChannel(this.log, this.NPU_IP, this.channel, brightness, callback);
