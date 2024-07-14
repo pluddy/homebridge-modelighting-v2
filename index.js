@@ -111,13 +111,13 @@ ModeLightingAccessory.prototype = {
     ModeGetChannel(this.log, this.NPU_IP, this.channel, callback);
   },
   setPowerState: function(powerOn, callback) {
-    ModeSetChannel(this.log, this.NPU_IP, powerOn ? this.defaultBrightness : 0, callback);
+    ModeSetChannel(this.log, this.NPU_IP, this.channel, powerOn ? this.defaultBrightness : 0, callback);
   },
   getBrightness: function(callback) {
     ModeGetChannel(this.log, this.NPU_IP, this.channel, callback);
   },
   setBrightness: function(brightness, callback) {
-    ModeSetChannel(this.log, this.NPU_IP, brightness, callback);
+    ModeSetChannel(this.log, this.NPU_IP, this.channel, brightness, callback);
   },
   identify: function(callback) {
     this.log("identify: Identify requested!");
