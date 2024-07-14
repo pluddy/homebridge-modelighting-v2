@@ -133,7 +133,7 @@ ModeLightingAccessory.prototype = {
       .setCharacteristic(Characteristic.Model, "NPU v1.3.2.1")
       .setCharacteristic(Characteristic.SerialNumber, "123456");
 
-    var lightService = new Service.LightBulb(this.name);
+    var lightService = new Service.Lightbulb(this.name);
     lightService
       .getCharacteristic(Characteristic.On)
       .on('set', this.setPowerState.bind(this))
