@@ -98,7 +98,7 @@ function ModeGetChannel(log, NPU_IP, channel, callback, trycount = 0) {
           var state = result.Evolution.SlavePowerChannel[0].State;
           var percent = dmx2pct[state];
           log.info('NPU:' + NPU_IP + ', getChannel:' + channel + ', state:' + state + ', pct:' + percent + ', try:'+trycount);
-          callback(null, state);
+          callback(null, percent);
         });
       }
     }
