@@ -64,7 +64,7 @@ function ModeSetChannel(log, NPU_IP, channel, percent, callback, trycount = 0) {
           log.error('FAIL! NPU:' + NPU_IP + ', cmd:setChannelToLevel, channel: '+ channel + ', pct:' + percent +', response: ' + response.statusMessage +', code:'+response.statusCode);
         }
       } else {
-        log.info('NPU:' + NPU_IP + ', cmd:setChannelToLevel, channel: ' + channel + ', pct:' + percent + ', try:'+trycount);
+        log.info('NPU:' + NPU_IP + ', cmd:setChannelToLevel, channel: ' + channel + ', pct:' + percent + ', try:' + trycount);
         callback(null, 0);
       }
     }
@@ -141,8 +141,8 @@ ModeLightingAccessory.prototype = {
     if (this.dimmable) {
       lightService
         .getCharacteristic(Characteristic.Brightness)
-        .on('set', this.getBrightness.bind(this))
-        .on('get', this.setBrightness.bind(this));
+        .on('set', this.setBrightness.bind(this))
+        .on('get', this.getBrightness.bind(this));
     }
     
     return [informationService, lightService];
