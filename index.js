@@ -65,7 +65,7 @@ function ModeSetChannel(log, NPU_IP, channel, percent, callback, trycount = 0) {
         }
       } else {
         log.info('NPU:' + NPU_IP + ', cmd:setChannelToLevel, channel: ' + channel + ', pct:' + percent + ', try:' + trycount);
-        callback(null, 0);
+        callback(null);
       }
     }
   );
