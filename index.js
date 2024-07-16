@@ -13,7 +13,7 @@ module.exports = function(homebridge) {
   // Service and Characteristic are from hap-nodejs
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
-  homebridge.registerAccessory("homebridge-modelightingv1", "modelightingv1", ModeLightingAccessory);
+  homebridge.registerAccessory("homebridge-modelighting-v2", "modelightingv1", ModeLightingAccessory);
 };
 
 function ModeLightingAccessory(log, config) {
