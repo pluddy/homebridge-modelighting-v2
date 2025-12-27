@@ -404,6 +404,11 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
     .setCharacteristic(Characteristic.Manufacturer, config.DEVICE_INFO.MANUFACTURER)
     .setCharacteristic(Characteristic.Model, config.DEVICE_INFO.MODEL)
     .setCharacteristic(Characteristic.SerialNumber, "123456");
+
+  // Start polling after accessory is fully configured
+  if (accessoryInstance.startPolling) {
+    accessoryInstance.startPolling();
+  }
 };
 
 // ============================================================================
@@ -505,9 +510,6 @@ function ModeLightingAccessory(log, config) {
   this.lastActivityTime = Date.now();
   this.currentPollingSpeed = 'slow';
   this.lastKnownState = null;
-
-  // Start polling
-  this.startPolling();
 }
 
 ModeLightingAccessory.prototype.startPolling = function() {
@@ -885,6 +887,11 @@ ModeLightingAccessory.prototype = {
 
     // Store reference to control service for polling updates
     this.controlService = controlService;
+
+    // Start polling after accessory is fully configured
+    if (this.startPolling) {
+      this.startPolling();
+    }
 
     return [informationService, controlService];
   }
