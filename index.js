@@ -423,7 +423,10 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
 
   // Start polling after accessory is fully configured
   if (accessoryInstance.startPolling) {
+    this.log.info(`Initializing polling for ${accessoryInstance.name} (mode: ${accessoryInstance.mode})`);
     accessoryInstance.startPolling();
+  } else {
+    this.log.warn(`${accessoryInstance.name}: startPolling method not available`);
   }
 };
 
@@ -907,7 +910,10 @@ ModeLightingAccessory.prototype = {
 
     // Start polling after accessory is fully configured
     if (this.startPolling) {
+      this.log.info(`Initializing polling for ${this.name} (mode: ${this.mode})`);
       this.startPolling();
+    } else {
+      this.log.warn(`${this.name}: startPolling method not available`);
     }
 
     return [informationService, controlService];
