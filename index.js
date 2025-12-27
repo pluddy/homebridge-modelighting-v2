@@ -372,11 +372,7 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
 
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
   // Create a ModeLightingAccessory instance that will handle all the logic
-  this.log.info(`[v2-DEBUG] Creating accessory instance for ${accessoryConfig.name}`);
   const accessoryInstance = new ModeLightingAccessory(this.log, accessoryConfig);
-
-  this.log.info(`[v2-DEBUG] After creation - prototype: ${Object.getPrototypeOf(accessoryInstance).constructor.name}`);
-  this.log.info(`[v2-DEBUG] After creation - has startPolling: ${typeof accessoryInstance.startPolling}`);
 
   // Store reference for future use
   accessory.accessoryInstance = accessoryInstance;
@@ -426,15 +422,8 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
     .setCharacteristic(Characteristic.SerialNumber, "123456");
 
   // Start polling after accessory is fully configured
-  this.log.info(`Checking polling setup for ${accessoryInstance.name} (mode: ${accessoryInstance.mode})`);
-  this.log.info(`  - startPolling type: ${typeof accessoryInstance.startPolling}`);
-  this.log.info(`  - prototype chain: ${Object.getPrototypeOf(accessoryInstance).constructor.name}`);
-
-  if (typeof accessoryInstance.startPolling === 'function') {
-    this.log.info(`Initializing polling for ${accessoryInstance.name}`);
+  if (accessoryInstance.startPolling) {
     accessoryInstance.startPolling();
-  } else {
-    this.log.error(`${accessoryInstance.name}: startPolling method not available!`);
   }
 };
 
@@ -716,7 +705,7 @@ ModeLightingAccessory.prototype = {
     }
   },
   setPowerState: function(powerOn, callback) {
-    // Mark activity to trigger fast polling
+    // Mark activity to trigger fast polling (for channels)
     if (this.markActivity) {
       this.markActivity();
     }
@@ -730,7 +719,17 @@ ModeLightingAccessory.prototype = {
     if (this.mode === 'scene') {
       // Scene mode: activate the appropriate scene
       const scene = powerOn ? this.on_scene : this.off_scene;
-      ModeActivateScene(this.log, this.NPU_IP, scene, callback, settings);
+      ModeActivateScene(this.log, this.NPU_IP, scene, (error) => {
+        callback(error);
+
+        // After activating scene, start burst polling to detect state change
+        if (!error && this.startBurstPolling) {
+          // Wait a moment for the scene to apply before polling
+          setTimeout(() => {
+            this.startBurstPolling(powerOn);
+          }, 500);
+        }
+      }, settings);
     } else {
       // Channel mode: set brightness
       // When turning on, restore the last brightness (not defaultBrightness)
@@ -832,10 +831,7 @@ ModeLightingAccessory.prototype = {
 
     // Start polling after accessory is fully configured
     if (this.startPolling) {
-      this.log.info(`Initializing polling for ${this.name} (mode: ${this.mode})`);
       this.startPolling();
-    } else {
-      this.log.warn(`${this.name}: startPolling method not available`);
     }
 
     return [informationService, controlService];
@@ -844,8 +840,8 @@ ModeLightingAccessory.prototype = {
 
 // Polling methods - must be added AFTER the prototype object assignment above
 ModeLightingAccessory.prototype.startPolling = function() {
-  // Don't poll scenes - they're momentary actions
   if (this.mode === 'scene') {
+    // Scene mode uses burst polling only after activation (not continuous)
     return;
   }
 
@@ -927,4 +923,67 @@ ModeLightingAccessory.prototype.stopPolling = function() {
     clearTimeout(this.pollInterval);
     this.pollInterval = null;
   }
+};
+
+// Burst polling for scenes - poll a few times after activation to detect state change
+ModeLightingAccessory.prototype.startBurstPolling = function(expectedState) {
+  if (this.mode !== 'scene') {
+    return;
+  }
+
+  // Store expected state and poll count
+  this.burstPollExpectedState = expectedState;
+  this.burstPollCount = 0;
+  this.burstPollMaxAttempts = 5; // Poll up to 5 times
+
+  this.log.info(`${this.name}: Starting burst polling (expecting ${expectedState ? 'on' : 'off'})`);
+  this.doBurstPoll();
+};
+
+ModeLightingAccessory.prototype.doBurstPoll = function() {
+  if (this.burstPollCount >= this.burstPollMaxAttempts) {
+    this.log.info(`${this.name}: Burst polling complete (${this.burstPollCount} attempts)`);
+    return;
+  }
+
+  this.burstPollCount++;
+
+  const settings = {
+    requestTimeout: this.requestTimeout,
+    maxRetries: this.maxRetries,
+    retryDelay: this.retryDelay
+  };
+
+  // Poll the scene state
+  ModeGetScene(this.log, this.NPU_IP, this.on_scene, (error, isActive) => {
+    if (!error) {
+      const stateMatches = isActive === this.burstPollExpectedState;
+
+      if (stateMatches) {
+        // State matches expected - update HomeKit and stop polling
+        this.log.info(`${this.name}: Scene state confirmed as ${isActive ? 'on' : 'off'} after ${this.burstPollCount} poll(s)`);
+
+        if (this.controlService) {
+          this.controlService.getCharacteristic(Characteristic.On).updateValue(isActive);
+        }
+
+        // Stop burst polling since we got the expected state
+        return;
+      } else {
+        // State doesn't match yet - schedule another poll
+        if (this.burstPollCount < this.burstPollMaxAttempts) {
+          setTimeout(() => {
+            this.doBurstPoll();
+          }, 1000); // Poll every 1 second during burst
+        }
+      }
+    } else {
+      // Error during poll - try again if we have attempts left
+      if (this.burstPollCount < this.burstPollMaxAttempts) {
+        setTimeout(() => {
+          this.doBurstPoll();
+        }, 1000);
+      }
+    }
+  }, settings);
 };
