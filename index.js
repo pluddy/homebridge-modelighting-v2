@@ -370,9 +370,22 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
   return uuid;
 };
 
+// Trigger burst polling on all scene accessories to update their states
+ModeLightingPlatform.prototype.triggerSceneBurstPolling = function() {
+  this.accessoryInstances.forEach(instance => {
+    if (instance.mode === 'scene' && instance.startBurstPolling) {
+      // Don't pass expected state - let each scene check its own state
+      instance.startBurstPolling();
+    }
+  });
+};
+
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
   // Create a ModeLightingAccessory instance that will handle all the logic
   const accessoryInstance = new ModeLightingAccessory(this.log, accessoryConfig);
+
+  // Store reference to platform for cross-accessory coordination (e.g., scene polling)
+  accessoryInstance.platform = this;
 
   // Store reference for future use
   accessory.accessoryInstance = accessoryInstance;
@@ -722,11 +735,12 @@ ModeLightingAccessory.prototype = {
       ModeActivateScene(this.log, this.NPU_IP, scene, (error) => {
         callback(error);
 
-        // After activating scene, start burst polling to detect state change
-        if (!error && this.startBurstPolling) {
+        // After activating scene, trigger burst polling on ALL scene accessories
+        // This ensures that when one scene is activated, other scenes update their state to "off"
+        if (!error && this.platform && this.platform.triggerSceneBurstPolling) {
           // Wait a moment for the scene to apply before polling
           setTimeout(() => {
-            this.startBurstPolling(powerOn);
+            this.platform.triggerSceneBurstPolling();
           }, 500);
         }
       }, settings);
@@ -926,23 +940,21 @@ ModeLightingAccessory.prototype.stopPolling = function() {
 };
 
 // Burst polling for scenes - poll a few times after activation to detect state change
-ModeLightingAccessory.prototype.startBurstPolling = function(expectedState) {
+ModeLightingAccessory.prototype.startBurstPolling = function() {
   if (this.mode !== 'scene') {
     return;
   }
 
-  // Store expected state and poll count
-  this.burstPollExpectedState = expectedState;
+  // Initialize burst poll count
   this.burstPollCount = 0;
   this.burstPollMaxAttempts = 5; // Poll up to 5 times
 
-  this.log.info(`${this.name}: Starting burst polling (expecting ${expectedState ? 'on' : 'off'})`);
+  this.log.debug(`${this.name}: Starting burst polling`);
   this.doBurstPoll();
 };
 
 ModeLightingAccessory.prototype.doBurstPoll = function() {
   if (this.burstPollCount >= this.burstPollMaxAttempts) {
-    this.log.info(`${this.name}: Burst polling complete (${this.burstPollCount} attempts)`);
     return;
   }
 
@@ -957,25 +969,25 @@ ModeLightingAccessory.prototype.doBurstPoll = function() {
   // Poll the scene state
   ModeGetScene(this.log, this.NPU_IP, this.on_scene, (error, isActive) => {
     if (!error) {
-      const stateMatches = isActive === this.burstPollExpectedState;
+      // Check if state changed from what HomeKit currently shows
+      if (this.controlService) {
+        const currentState = this.controlService.getCharacteristic(Characteristic.On).value;
 
-      if (stateMatches) {
-        // State matches expected - update HomeKit and stop polling
-        this.log.info(`${this.name}: Scene state confirmed as ${isActive ? 'on' : 'off'} after ${this.burstPollCount} poll(s)`);
-
-        if (this.controlService) {
+        if (currentState !== isActive) {
+          // State changed - update HomeKit and log it
+          this.log.info(`${this.name}: Scene state changed to ${isActive ? 'on' : 'off'}`);
           this.controlService.getCharacteristic(Characteristic.On).updateValue(isActive);
-        }
 
-        // Stop burst polling since we got the expected state
-        return;
-      } else {
-        // State doesn't match yet - schedule another poll
-        if (this.burstPollCount < this.burstPollMaxAttempts) {
-          setTimeout(() => {
-            this.doBurstPoll();
-          }, 1000); // Poll every 1 second during burst
+          // Stop burst polling since we detected the change
+          return;
         }
+      }
+
+      // State hasn't changed yet - schedule another poll if we have attempts left
+      if (this.burstPollCount < this.burstPollMaxAttempts) {
+        setTimeout(() => {
+          this.doBurstPoll();
+        }, 1000); // Poll every 1 second during burst
       }
     } else {
       // Error during poll - try again if we have attempts left
