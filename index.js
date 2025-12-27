@@ -31,6 +31,7 @@ function ModeLightingPlatform(log, config, api) {
   this.config = config;
   this.api = api;
   this.accessories = [];
+  this.accessoryInstances = []; // Track all accessory instances for cleanup
 
   // Validate required configuration
   if (!config.NPU_IP) {
@@ -74,6 +75,16 @@ function ModeLightingPlatform(log, config, api) {
     this.api.on('didFinishLaunching', () => {
       this.log.info('Homebridge finished launching, starting NPU discovery...');
       this.discoverAccessories();
+    });
+
+    // Clean up polling timers on shutdown
+    this.api.on('shutdown', () => {
+      this.log.info('Homebridge shutting down, stopping all polling...');
+      this.accessoryInstances.forEach(instance => {
+        if (instance.stopPolling) {
+          instance.stopPolling();
+        }
+      });
     });
   }
 }
@@ -130,8 +141,10 @@ ModeLightingPlatform.prototype.discoverAccessories = function() {
 ModeLightingPlatform.prototype.parseAndCreateAccessories = function(configData) {
   const discoveredAccessories = [];
 
-  // Log the structure to help with debugging
-  this.log.debug('NPU configuration structure:', JSON.stringify(configData, null, 2));
+  // Log summary of configuration structure
+  const deviceCount = configData?.Evolution?.Devices?.[0]?.EDIN8ChDimmerModule?.length || 0;
+  const sceneCount = configData?.Evolution?.Scenes?.[0]?.Scene?.length || 0;
+  this.log.info(`NPU configuration summary - Devices: ${deviceCount}, Scenes: ${sceneCount}`);
 
   // Try to find channels in the configuration
   if (this.discoverChannels) {
@@ -364,6 +377,9 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
   // Store reference for future use
   accessory.accessoryInstance = accessoryInstance;
 
+  // Track instance for cleanup on shutdown
+  this.accessoryInstances.push(accessoryInstance);
+
   // Determine which service type to use based on mode
   const ServiceType = accessoryInstance.mode === 'scene' ? Service.Switch : Service.Lightbulb;
 
@@ -518,6 +534,7 @@ ModeLightingAccessory.prototype.startPolling = function() {
     return;
   }
 
+  this.log.info(`${this.name}: Starting state polling`);
   this.scheduleNextPoll();
 };
 
@@ -534,7 +551,7 @@ ModeLightingAccessory.prototype.scheduleNextPoll = function() {
   // Log speed changes
   const newSpeed = shouldPollFast ? 'fast' : 'slow';
   if (newSpeed !== this.currentPollingSpeed) {
-    this.log.debug(`${this.name}: Switching to ${newSpeed} polling (${interval}ms)`);
+    this.log.info(`${this.name}: Switching to ${newSpeed} polling (${interval}ms)`);
     this.currentPollingSpeed = newSpeed;
   }
 
@@ -595,7 +612,7 @@ ModeLightingAccessory.prototype.stopPolling = function() {
     clearTimeout(this.pollInterval);
     this.pollInterval = null;
   }
-}
+};
 
 function ModeSetChannel(log, NPU_IP, channel, percent, callback, settings, trycount = 0) {
   const dmx = pct2dmx[percent];
@@ -645,7 +662,7 @@ function ModeGetChannel(log, NPU_IP, channel, callback, settings, trycount = 0) 
     parseXMLString(response.data, function (err, result) {
       if (err) {
         log.error(`NPU: ${NPU_IP}, getChannel: ${channel}, XML parse error: ${err.message}`);
-        callback(null, new Error('XML parse error'));
+        callback(new Error('XML parse error'), null);
         return;
       }
 
@@ -656,7 +673,7 @@ function ModeGetChannel(log, NPU_IP, channel, callback, settings, trycount = 0) 
         callback(null, percent);
       } catch (parseError) {
         log.error(`NPU: ${NPU_IP}, getChannel: ${channel}, data extraction error: ${parseError.message}`);
-        callback(null, new Error('Invalid response structure'));
+        callback(new Error('Invalid response structure'), null);
       }
     });
   })
@@ -668,7 +685,7 @@ function ModeGetChannel(log, NPU_IP, channel, callback, settings, trycount = 0) 
     } else {
       const errorMsg = error.response ? error.response.status : (error.code || error.message);
       log.error(`FAIL! NPU: ${NPU_IP}, getChannel: ${channel}, error: ${errorMsg}`);
-      callback(null, error);
+      callback(error, null);
     }
   });
 }
