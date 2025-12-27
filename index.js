@@ -380,6 +380,16 @@ ModeLightingPlatform.prototype.triggerSceneBurstPolling = function() {
   });
 };
 
+// Trigger fast polling on all channel accessories (called when scenes are activated)
+ModeLightingPlatform.prototype.triggerChannelFastPolling = function() {
+  this.accessoryInstances.forEach(instance => {
+    if (instance.mode === 'channel' && instance.markActivity) {
+      // Mark activity to switch channels to fast polling
+      instance.markActivity();
+    }
+  });
+};
+
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
   // Create a ModeLightingAccessory instance that will handle all the logic
   const accessoryInstance = new ModeLightingAccessory(this.log, accessoryConfig);
@@ -735,12 +745,18 @@ ModeLightingAccessory.prototype = {
       ModeActivateScene(this.log, this.NPU_IP, scene, (error) => {
         callback(error);
 
-        // After activating scene, trigger burst polling on ALL scene accessories
-        // This ensures that when one scene is activated, other scenes update their state to "off"
-        if (!error && this.platform && this.platform.triggerSceneBurstPolling) {
+        // After activating scene, trigger polling on ALL accessories
+        // - Scene accessories: burst polling to update on/off state (mutual exclusivity)
+        // - Channel accessories: fast polling to detect scene-induced changes
+        if (!error && this.platform) {
           // Wait a moment for the scene to apply before polling
           setTimeout(() => {
-            this.platform.triggerSceneBurstPolling();
+            if (this.platform.triggerSceneBurstPolling) {
+              this.platform.triggerSceneBurstPolling();
+            }
+            if (this.platform.triggerChannelFastPolling) {
+              this.platform.triggerChannelFastPolling();
+            }
           }, 500);
         }
       }, settings);
