@@ -539,92 +539,6 @@ function ModeLightingAccessory(log, config) {
   this.lastKnownState = null;
 }
 
-ModeLightingAccessory.prototype.startPolling = function() {
-  // Don't poll scenes - they're momentary actions
-  if (this.mode === 'scene') {
-    return;
-  }
-
-  this.log.info(`${this.name}: Starting state polling`);
-  this.scheduleNextPoll();
-};
-
-ModeLightingAccessory.prototype.scheduleNextPoll = function() {
-  if (this.pollInterval) {
-    clearTimeout(this.pollInterval);
-  }
-
-  // Determine polling speed based on recent activity
-  const timeSinceActivity = Date.now() - this.lastActivityTime;
-  const shouldPollFast = timeSinceActivity < config.POLLING.FAST_DURATION;
-  const interval = shouldPollFast ? config.POLLING.FAST_INTERVAL : config.POLLING.SLOW_INTERVAL;
-
-  // Log speed changes
-  const newSpeed = shouldPollFast ? 'fast' : 'slow';
-  if (newSpeed !== this.currentPollingSpeed) {
-    this.log.info(`${this.name}: Switching to ${newSpeed} polling (${interval}ms)`);
-    this.currentPollingSpeed = newSpeed;
-  }
-
-  this.pollInterval = setTimeout(() => {
-    this.pollState();
-  }, interval);
-};
-
-ModeLightingAccessory.prototype.pollState = function() {
-  const settings = {
-    requestTimeout: this.requestTimeout,
-    maxRetries: this.maxRetries,
-    retryDelay: this.retryDelay
-  };
-
-  // Poll the current state
-  ModeGetChannel(this.log, this.NPU_IP, this.channel, (error, percent) => {
-    if (!error) {
-      // Check if state changed
-      if (this.lastKnownState !== null && this.lastKnownState !== percent) {
-        this.log.info(`${this.name}: External state change detected (${this.lastKnownState}% -> ${percent}%)`);
-
-        // Update HomeKit with the new state
-        if (this.controlService) {
-          // Update power state
-          const isOn = percent > 0;
-          const wasOn = this.lastKnownState > 0;
-          if (isOn !== wasOn) {
-            this.controlService.getCharacteristic(Characteristic.On).updateValue(isOn);
-          }
-
-          // Update brightness if it changed
-          if (this.dimmable && percent !== this.lastKnownState) {
-            this.controlService.getCharacteristic(Characteristic.Brightness).updateValue(percent);
-          }
-
-          // Update cached brightness
-          if (percent > 0) {
-            this.cachedBrightness = percent;
-          }
-        }
-      }
-
-      this.lastKnownState = percent;
-    }
-
-    // Schedule next poll
-    this.scheduleNextPoll();
-  }, settings);
-};
-
-ModeLightingAccessory.prototype.markActivity = function() {
-  this.lastActivityTime = Date.now();
-};
-
-ModeLightingAccessory.prototype.stopPolling = function() {
-  if (this.pollInterval) {
-    clearTimeout(this.pollInterval);
-    this.pollInterval = null;
-  }
-};
-
 function ModeSetChannel(log, NPU_IP, channel, percent, callback, settings, trycount = 0) {
   const dmx = pct2dmx[percent];
   const payload = `<?xml version="1.0"?><methodCall>
@@ -925,5 +839,92 @@ ModeLightingAccessory.prototype = {
     }
 
     return [informationService, controlService];
+  }
+};
+
+// Polling methods - must be added AFTER the prototype object assignment above
+ModeLightingAccessory.prototype.startPolling = function() {
+  // Don't poll scenes - they're momentary actions
+  if (this.mode === 'scene') {
+    return;
+  }
+
+  this.log.info(`${this.name}: Starting state polling`);
+  this.scheduleNextPoll();
+};
+
+ModeLightingAccessory.prototype.scheduleNextPoll = function() {
+  if (this.pollInterval) {
+    clearTimeout(this.pollInterval);
+  }
+
+  // Determine polling speed based on recent activity
+  const timeSinceActivity = Date.now() - this.lastActivityTime;
+  const shouldPollFast = timeSinceActivity < config.POLLING.FAST_DURATION;
+  const interval = shouldPollFast ? config.POLLING.FAST_INTERVAL : config.POLLING.SLOW_INTERVAL;
+
+  // Log speed changes
+  const newSpeed = shouldPollFast ? 'fast' : 'slow';
+  if (newSpeed !== this.currentPollingSpeed) {
+    this.log.info(`${this.name}: Switching to ${newSpeed} polling (${interval}ms)`);
+    this.currentPollingSpeed = newSpeed;
+  }
+
+  this.pollInterval = setTimeout(() => {
+    this.pollState();
+  }, interval);
+};
+
+ModeLightingAccessory.prototype.pollState = function() {
+  const settings = {
+    requestTimeout: this.requestTimeout,
+    maxRetries: this.maxRetries,
+    retryDelay: this.retryDelay
+  };
+
+  // Poll the current state
+  ModeGetChannel(this.log, this.NPU_IP, this.channel, (error, percent) => {
+    if (!error) {
+      // Check if state changed
+      if (this.lastKnownState !== null && this.lastKnownState !== percent) {
+        this.log.info(`${this.name}: External state change detected (${this.lastKnownState}% -> ${percent}%)`);
+
+        // Update HomeKit with the new state
+        if (this.controlService) {
+          // Update power state
+          const isOn = percent > 0;
+          const wasOn = this.lastKnownState > 0;
+          if (isOn !== wasOn) {
+            this.controlService.getCharacteristic(Characteristic.On).updateValue(isOn);
+          }
+
+          // Update brightness if it changed
+          if (this.dimmable && percent !== this.lastKnownState) {
+            this.controlService.getCharacteristic(Characteristic.Brightness).updateValue(percent);
+          }
+
+          // Update cached brightness
+          if (percent > 0) {
+            this.cachedBrightness = percent;
+          }
+        }
+      }
+
+      this.lastKnownState = percent;
+    }
+
+    // Schedule next poll
+    this.scheduleNextPoll();
+  }, settings);
+};
+
+ModeLightingAccessory.prototype.markActivity = function() {
+  this.lastActivityTime = Date.now();
+};
+
+ModeLightingAccessory.prototype.stopPolling = function() {
+  if (this.pollInterval) {
+    clearTimeout(this.pollInterval);
+    this.pollInterval = null;
   }
 };
