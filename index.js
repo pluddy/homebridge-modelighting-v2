@@ -372,7 +372,11 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
 
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
   // Create a ModeLightingAccessory instance that will handle all the logic
+  this.log.info(`[v2-DEBUG] Creating accessory instance for ${accessoryConfig.name}`);
   const accessoryInstance = new ModeLightingAccessory(this.log, accessoryConfig);
+
+  this.log.info(`[v2-DEBUG] After creation - prototype: ${Object.getPrototypeOf(accessoryInstance).constructor.name}`);
+  this.log.info(`[v2-DEBUG] After creation - has startPolling: ${typeof accessoryInstance.startPolling}`);
 
   // Store reference for future use
   accessory.accessoryInstance = accessoryInstance;
