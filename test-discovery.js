@@ -56,10 +56,17 @@ axios.get(`http://${NPU_IP}/xml-dump?nocrlf=true&what=configuration&where=/`, {
               const loadId = channel.$ && channel.$.LoadId ? channel.$.LoadId : null;
               const name = channel.$ && channel.$.Text ? channel.$.Text : null;
 
+              // DimmingType: 1 = switched (non-dimmable), 2 = dimmable
+              const dimmingType = channel.DimmingType && channel.DimmingType[0]
+                ? parseInt(channel.DimmingType[0], 10)
+                : 2; // Default to dimmable if not specified
+              const dimmable = dimmingType === 2;
+
               if (loadId) {
                 channels.push({
                   number: String(loadId).padStart(3, '0'),
-                  name: name || `Channel ${loadId}`
+                  name: name || `Channel ${loadId}`,
+                  dimmable: dimmable
                 });
               }
             });
@@ -71,7 +78,8 @@ axios.get(`http://${NPU_IP}/xml-dump?nocrlf=true&what=configuration&where=/`, {
     if (channels.length > 0) {
       console.log(`Found ${channels.length} channels:`);
       channels.forEach((channel, index) => {
-        console.log(`  ${index + 1}. Channel ${channel.number}: ${channel.name}`);
+        const dimType = channel.dimmable ? 'dimmable' : 'switched';
+        console.log(`  ${index + 1}. Channel ${channel.number}: ${channel.name} [${dimType}]`);
       });
     } else {
       console.log('No channels found');

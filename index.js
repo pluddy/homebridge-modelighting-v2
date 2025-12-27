@@ -161,7 +161,7 @@ ModeLightingPlatform.prototype.parseAndCreateAccessories = function(configData) 
         name: channelInfo.name || `Channel ${channelInfo.number}`,
         NPU_IP: this.NPU_IP,
         channel: channelInfo.number,
-        dimmable: true,
+        dimmable: channelInfo.dimmable !== undefined ? channelInfo.dimmable : true,
         defaultBrightness: 100,
         requestTimeout: this.requestTimeout,
         maxRetries: this.maxRetries,
@@ -258,10 +258,17 @@ ModeLightingPlatform.prototype.findChannels = function(configData) {
             const loadId = channel.$ && channel.$.LoadId ? channel.$.LoadId : null;
             const name = channel.$ && channel.$.Text ? channel.$.Text : null;
 
+            // DimmingType: 1 = switched (non-dimmable), 2 = dimmable
+            const dimmingType = channel.DimmingType && channel.DimmingType[0]
+              ? parseInt(channel.DimmingType[0], 10)
+              : 2; // Default to dimmable if not specified
+            const dimmable = dimmingType === 2;
+
             if (loadId) {
               channels.push({
                 number: String(loadId).padStart(3, '0'),
-                name: name || `Channel ${loadId}`
+                name: name || `Channel ${loadId}`,
+                dimmable: dimmable
               });
             }
           });
