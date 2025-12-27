@@ -80,7 +80,7 @@ function ModeLightingPlatform(log, config, api) {
 
 ModeLightingPlatform.prototype.configureAccessory = function(accessory) {
   // Called when restoring cached accessories from disk
-  this.log.info(`Configuring cached accessory: ${accessory.displayName}`);
+  this.log.info(`Restoring cached accessory: ${accessory.displayName}`);
   this.accessories.push(accessory);
 };
 
@@ -192,10 +192,28 @@ ModeLightingPlatform.prototype.parseAndCreateAccessories = function(configData) 
 
   this.log.info(`Creating ${discoveredAccessories.length} accessories...`);
 
+  // Track which accessories we're keeping
+  const discoveredUUIDs = [];
+
   // Create accessories
   discoveredAccessories.forEach(accessoryInfo => {
-    this.addAccessory(accessoryInfo.config);
+    const uuid = this.addAccessory(accessoryInfo.config);
+    if (uuid) {
+      discoveredUUIDs.push(uuid);
+    }
   });
+
+  // Remove stale cached accessories that weren't rediscovered
+  const staleAccessories = this.accessories.filter(acc => !discoveredUUIDs.includes(acc.UUID));
+  if (staleAccessories.length > 0) {
+    this.log.info(`Removing ${staleAccessories.length} stale cached accessories`);
+    staleAccessories.forEach(accessory => {
+      this.log.info(`Removing stale accessory: ${accessory.displayName}`);
+      this.api.unregisterPlatformAccessories("homebridge-modelighting-v2", "ModelightingV2Platform", [accessory]);
+    });
+    // Update accessories array
+    this.accessories = this.accessories.filter(acc => discoveredUUIDs.includes(acc.UUID));
+  }
 };
 
 ModeLightingPlatform.prototype.findChannels = function(configData) {
@@ -311,7 +329,7 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
   if (existingAccessory) {
     this.log.info(`Accessory already exists: ${accessoryConfig.name}`);
     this.configureAccessoryInstance(existingAccessory, accessoryConfig);
-    return;
+    return uuid;
   }
 
   this.log.info(`Adding new accessory: ${accessoryConfig.name}`);
@@ -325,6 +343,8 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
 
   this.api.registerPlatformAccessories("homebridge-modelighting-v2", "ModelightingV2Platform", [accessory]);
   this.accessories.push(accessory);
+
+  return uuid;
 };
 
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
