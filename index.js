@@ -422,11 +422,15 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
     .setCharacteristic(Characteristic.SerialNumber, "123456");
 
   // Start polling after accessory is fully configured
-  if (accessoryInstance.startPolling) {
-    this.log.info(`Initializing polling for ${accessoryInstance.name} (mode: ${accessoryInstance.mode})`);
+  this.log.info(`Checking polling setup for ${accessoryInstance.name} (mode: ${accessoryInstance.mode})`);
+  this.log.info(`  - startPolling type: ${typeof accessoryInstance.startPolling}`);
+  this.log.info(`  - prototype chain: ${Object.getPrototypeOf(accessoryInstance).constructor.name}`);
+
+  if (typeof accessoryInstance.startPolling === 'function') {
+    this.log.info(`Initializing polling for ${accessoryInstance.name}`);
     accessoryInstance.startPolling();
   } else {
-    this.log.warn(`${accessoryInstance.name}: startPolling method not available`);
+    this.log.error(`${accessoryInstance.name}: startPolling method not available!`);
   }
 };
 
