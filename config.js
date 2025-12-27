@@ -26,5 +26,17 @@ module.exports = {
   DEVICE_INFO: {
     MANUFACTURER: 'Mode Lighting',
     MODEL: 'NPU v1.3.2.1'
+  },
+
+  // Polling configuration for detecting external state changes
+  POLLING: {
+    // Fast polling interval after activity (milliseconds)
+    FAST_INTERVAL: 2000,
+
+    // Slow polling interval during idle (milliseconds)
+    SLOW_INTERVAL: 30000,
+
+    // How long to maintain fast polling after activity (milliseconds)
+    FAST_DURATION: 60000
   }
 };

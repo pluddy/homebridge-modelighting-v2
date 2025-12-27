@@ -339,6 +339,16 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
   // Store config in context for recovery
   accessory.context.config = accessoryConfig;
 
+  // Extract room hint from name prefix (e.g., "Kitchen:1" -> "Kitchen")
+  const colonIndex = accessoryConfig.name.indexOf(':');
+  if (colonIndex > 0) {
+    const roomHint = accessoryConfig.name.substring(0, colonIndex).trim();
+    if (roomHint) {
+      accessory.context.room = roomHint;
+      this.log.debug(`Setting room hint "${roomHint}" for ${accessoryConfig.name}`);
+    }
+  }
+
   this.configureAccessoryInstance(accessory, accessoryConfig);
 
   this.api.registerPlatformAccessories("homebridge-modelighting-v2", "ModelightingV2Platform", [accessory]);
@@ -362,6 +372,9 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
   if (!controlService) {
     controlService = accessory.addService(ServiceType, accessoryConfig.name);
   }
+
+  // Store reference to control service for polling updates
+  accessoryInstance.controlService = controlService;
 
   // Configure the On/Off characteristic
   controlService
@@ -449,6 +462,9 @@ function ModeLightingAccessory(log, config) {
       throw new Error(`ModeLighting: dimmable must be a boolean (true/false), got: ${config.dimmable}`);
     }
     this.dimmable = config.dimmable !== undefined ? config.dimmable : true; // Default to dimmable
+
+    // Track the last brightness level for restoring when turning on
+    this.cachedBrightness = this.defaultBrightness;
   } else {
     // Scene mode configuration
     this.on_scene = config.on_scene;
@@ -482,6 +498,100 @@ function ModeLightingAccessory(log, config) {
 
   if (config.requestTimeout || config.maxRetries || config.retryDelay) {
     this.log.info(`Custom network settings - Timeout: ${this.requestTimeout}ms, Max Retries: ${this.maxRetries}, Retry Delay: ${this.retryDelay}ms`);
+  }
+
+  // Initialize adaptive polling for detecting external state changes
+  this.pollInterval = null;
+  this.lastActivityTime = Date.now();
+  this.currentPollingSpeed = 'slow';
+  this.lastKnownState = null;
+
+  // Start polling
+  this.startPolling();
+}
+
+ModeLightingAccessory.prototype.startPolling = function() {
+  // Don't poll scenes - they're momentary actions
+  if (this.mode === 'scene') {
+    return;
+  }
+
+  this.scheduleNextPoll();
+};
+
+ModeLightingAccessory.prototype.scheduleNextPoll = function() {
+  if (this.pollInterval) {
+    clearTimeout(this.pollInterval);
+  }
+
+  // Determine polling speed based on recent activity
+  const timeSinceActivity = Date.now() - this.lastActivityTime;
+  const shouldPollFast = timeSinceActivity < config.POLLING.FAST_DURATION;
+  const interval = shouldPollFast ? config.POLLING.FAST_INTERVAL : config.POLLING.SLOW_INTERVAL;
+
+  // Log speed changes
+  const newSpeed = shouldPollFast ? 'fast' : 'slow';
+  if (newSpeed !== this.currentPollingSpeed) {
+    this.log.debug(`${this.name}: Switching to ${newSpeed} polling (${interval}ms)`);
+    this.currentPollingSpeed = newSpeed;
+  }
+
+  this.pollInterval = setTimeout(() => {
+    this.pollState();
+  }, interval);
+};
+
+ModeLightingAccessory.prototype.pollState = function() {
+  const settings = {
+    requestTimeout: this.requestTimeout,
+    maxRetries: this.maxRetries,
+    retryDelay: this.retryDelay
+  };
+
+  // Poll the current state
+  ModeGetChannel(this.log, this.NPU_IP, this.channel, (error, percent) => {
+    if (!error) {
+      // Check if state changed
+      if (this.lastKnownState !== null && this.lastKnownState !== percent) {
+        this.log.info(`${this.name}: External state change detected (${this.lastKnownState}% -> ${percent}%)`);
+
+        // Update HomeKit with the new state
+        if (this.controlService) {
+          // Update power state
+          const isOn = percent > 0;
+          const wasOn = this.lastKnownState > 0;
+          if (isOn !== wasOn) {
+            this.controlService.getCharacteristic(Characteristic.On).updateValue(isOn);
+          }
+
+          // Update brightness if it changed
+          if (this.dimmable && percent !== this.lastKnownState) {
+            this.controlService.getCharacteristic(Characteristic.Brightness).updateValue(percent);
+          }
+
+          // Update cached brightness
+          if (percent > 0) {
+            this.cachedBrightness = percent;
+          }
+        }
+      }
+
+      this.lastKnownState = percent;
+    }
+
+    // Schedule next poll
+    this.scheduleNextPoll();
+  }, settings);
+};
+
+ModeLightingAccessory.prototype.markActivity = function() {
+  this.lastActivityTime = Date.now();
+};
+
+ModeLightingAccessory.prototype.stopPolling = function() {
+  if (this.pollInterval) {
+    clearTimeout(this.pollInterval);
+    this.pollInterval = null;
   }
 }
 
@@ -662,6 +772,11 @@ ModeLightingAccessory.prototype = {
     }
   },
   setPowerState: function(powerOn, callback) {
+    // Mark activity to trigger fast polling
+    if (this.markActivity) {
+      this.markActivity();
+    }
+
     const settings = {
       requestTimeout: this.requestTimeout,
       maxRetries: this.maxRetries,
@@ -674,7 +789,13 @@ ModeLightingAccessory.prototype = {
       ModeActivateScene(this.log, this.NPU_IP, scene, callback, settings);
     } else {
       // Channel mode: set brightness
-      ModeSetChannel(this.log, this.NPU_IP, this.channel, powerOn ? this.defaultBrightness : 0, callback, settings);
+      // When turning on, restore the last brightness (not defaultBrightness)
+      const targetBrightness = powerOn ? this.cachedBrightness : 0;
+
+      // Update last known state for polling
+      this.lastKnownState = targetBrightness;
+
+      ModeSetChannel(this.log, this.NPU_IP, this.channel, targetBrightness, callback, settings);
     }
   },
   getBrightness: function(callback) {
@@ -693,11 +814,20 @@ ModeLightingAccessory.prototype = {
       if (error) {
         callback(error);
       } else {
+        // Update cached brightness to match reality (in case light was changed outside HomeKit)
+        if (percent > 0) {
+          this.cachedBrightness = percent;
+        }
         callback(null, percent);
       }
     }, settings);
   },
   setBrightness: function(brightness, callback) {
+    // Mark activity to trigger fast polling
+    if (this.markActivity) {
+      this.markActivity();
+    }
+
     if (this.mode === 'scene') {
       // Scene mode doesn't support brightness
       callback(new Error('Brightness not supported in scene mode'));
@@ -709,6 +839,13 @@ ModeLightingAccessory.prototype = {
       maxRetries: this.maxRetries,
       retryDelay: this.retryDelay
     };
+
+    // Cache the brightness so we can restore it when turning on
+    this.cachedBrightness = brightness;
+
+    // Update last known state for polling
+    this.lastKnownState = brightness;
+
     ModeSetChannel(this.log, this.NPU_IP, this.channel, brightness, callback, settings);
   },
   identify: function(callback) {
@@ -745,6 +882,9 @@ ModeLightingAccessory.prototype = {
         .on('set', this.setBrightness.bind(this))
         .on('get', this.getBrightness.bind(this));
     }
+
+    // Store reference to control service for polling updates
+    this.controlService = controlService;
 
     return [informationService, controlService];
   }
