@@ -262,8 +262,8 @@ ModeLightingPlatform.prototype.findScenes = function(configData) {
         : [scenesData.Scene];
 
       sceneArray.forEach(scene => {
-        // SceneNo is the scene number, LoadId is identifier
-        const sceneNo = scene.SceneNo && scene.SceneNo[0] ? scene.SceneNo[0] : null;
+        // LoadId is the unique identifier used for API calls
+        // SceneNo is the user-facing scene number
         const loadId = scene.$ && scene.$.LoadId ? scene.$.LoadId : null;
         const name = scene.$ && scene.$.Text ? scene.$.Text : null;
 
@@ -272,12 +272,10 @@ ModeLightingPlatform.prototype.findScenes = function(configData) {
           return; // Skip this scene
         }
 
-        // Use SceneNo if available, otherwise use LoadId
-        const number = sceneNo || loadId;
-
-        if (number && name) {
+        // We must use LoadId for API calls, not SceneNo
+        if (loadId && name) {
           scenes.push({
-            number: String(number),
+            number: String(loadId), // Use LoadId for API queries
             name: name
           });
         }
