@@ -330,37 +330,49 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
 };
 
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
-  // Create a ModeLightingAccessory instance and bind its services to this platform accessory
+  // Create a ModeLightingAccessory instance that will handle all the logic
   const accessoryInstance = new ModeLightingAccessory(this.log, accessoryConfig);
-
-  // Get services from the accessory instance
-  const services = accessoryInstance.getServices();
-
-  // Add services to the platform accessory
-  services.forEach(service => {
-    const existingService = accessory.getService(service.UUID);
-    if (existingService) {
-      // Update existing service
-      existingService.characteristics.forEach(char => {
-        const sourceChar = service.getCharacteristic(char.UUID);
-        if (sourceChar) {
-          // Copy event handlers
-          char.removeAllListeners();
-          if (sourceChar.listeners('set').length > 0) {
-            char.on('set', accessoryInstance.setPowerState.bind(accessoryInstance));
-          }
-          if (sourceChar.listeners('get').length > 0) {
-            char.on('get', accessoryInstance.getPowerState.bind(accessoryInstance));
-          }
-        }
-      });
-    } else {
-      accessory.addService(service);
-    }
-  });
 
   // Store reference for future use
   accessory.accessoryInstance = accessoryInstance;
+
+  // Determine which service type to use based on mode
+  const ServiceType = accessoryInstance.mode === 'scene' ? Service.Switch : Service.Lightbulb;
+
+  // Get or add the control service
+  let controlService = accessory.getService(ServiceType);
+  if (!controlService) {
+    controlService = accessory.addService(ServiceType, accessoryConfig.name);
+  }
+
+  // Configure the On/Off characteristic
+  controlService
+    .getCharacteristic(Characteristic.On)
+    .removeAllListeners('set')
+    .removeAllListeners('get')
+    .on('set', accessoryInstance.setPowerState.bind(accessoryInstance))
+    .on('get', accessoryInstance.getPowerState.bind(accessoryInstance));
+
+  // Add brightness control if dimmable (only for channel mode)
+  if (accessoryInstance.dimmable && accessoryInstance.mode === 'channel') {
+    controlService
+      .getCharacteristic(Characteristic.Brightness)
+      .removeAllListeners('set')
+      .removeAllListeners('get')
+      .on('set', accessoryInstance.setBrightness.bind(accessoryInstance))
+      .on('get', accessoryInstance.getBrightness.bind(accessoryInstance));
+  }
+
+  // Ensure AccessoryInformation service exists
+  let informationService = accessory.getService(Service.AccessoryInformation);
+  if (!informationService) {
+    informationService = accessory.addService(Service.AccessoryInformation);
+  }
+
+  informationService
+    .setCharacteristic(Characteristic.Manufacturer, config.DEVICE_INFO.MANUFACTURER)
+    .setCharacteristic(Characteristic.Model, config.DEVICE_INFO.MODEL)
+    .setCharacteristic(Characteristic.SerialNumber, "123456");
 };
 
 // ============================================================================
