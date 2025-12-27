@@ -33,6 +33,11 @@ function ModeLightingPlatform(log, config, api) {
   this.accessories = [];
   this.accessoryInstances = []; // Track all accessory instances for cleanup
 
+  // Long-polling state
+  this.longPollConnection = null;  // axios cancel token
+  this.longPollActive = false;     // connection status
+  this.isShuttingDown = false;     // shutdown flag
+
   // Validate required configuration
   if (!config.NPU_IP) {
     throw new Error('ModeLighting Platform: Missing required config field "NPU_IP"');
@@ -77,9 +82,15 @@ function ModeLightingPlatform(log, config, api) {
       this.discoverAccessories();
     });
 
-    // Clean up polling timers on shutdown
+    // Clean up on shutdown
     this.api.on('shutdown', () => {
-      this.log.info('Homebridge shutting down, stopping all polling...');
+      this.log.info('Homebridge shutting down...');
+      this.isShuttingDown = true;
+
+      // Stop long-polling
+      this.stopLongPolling();
+
+      // Stop any remaining accessory-level polling (for accessory plugin mode)
       this.accessoryInstances.forEach(instance => {
         if (instance.stopPolling) {
           instance.stopPolling();
@@ -227,6 +238,9 @@ ModeLightingPlatform.prototype.parseAndCreateAccessories = function(configData) 
     // Update accessories array
     this.accessories = this.accessories.filter(acc => discoveredUUIDs.includes(acc.UUID));
   }
+
+  // Start long-polling for real-time state updates after all accessories are registered
+  this.startLongPolling();
 };
 
 ModeLightingPlatform.prototype.findChannels = function(configData) {
@@ -377,14 +391,191 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
   return uuid;
 };
 
-// Trigger fast polling on all channel accessories (called when scenes are activated)
-ModeLightingPlatform.prototype.triggerChannelFastPolling = function() {
-  this.accessoryInstances.forEach(instance => {
-    if (instance.mode === 'channel' && instance.markActivity) {
-      // Mark activity to switch channels to fast polling
-      instance.markActivity();
+// Start long-polling for NPU status updates
+ModeLightingPlatform.prototype.startLongPolling = function() {
+  if (this.longPollActive) {
+    this.log.debug('Long-polling already active');
+    return;
+  }
+
+  this.log.info('Starting NPU long-polling for real-time updates');
+  this.longPollActive = true;
+  this.doLongPoll();
+};
+
+// Perform a single long-poll request
+ModeLightingPlatform.prototype.doLongPoll = function() {
+  if (!this.longPollActive || this.isShuttingDown) {
+    return;
+  }
+
+  // Create cancel token for this request
+  const CancelToken = axios.CancelToken;
+  const source = CancelToken.source();
+  this.longPollConnection = source;
+
+  const url = `http://${this.NPU_IP}/xml-dump?nocrlf=true&longpoll=${config.LONG_POLLING.TIMEOUT}&what=status&where=/`;
+
+  axios.get(url, {
+    headers: {
+      'Content-Type': 'application/xml'
+    },
+    timeout: config.LONG_POLLING.REQUEST_TIMEOUT,
+    cancelToken: source.token,
+    validateStatus: function (status) {
+      return status === 200;
+    }
+  })
+  .then((response) => {
+    // Status update received - process it
+    this.handleStatusUpdate(response.data);
+
+    // Immediately reconnect to wait for next change
+    if (this.longPollActive && !this.isShuttingDown) {
+      setImmediate(() => this.doLongPoll());
+    }
+  })
+  .catch((error) => {
+    if (axios.isCancel(error)) {
+      this.log.debug('Long-poll request cancelled');
+      return;
+    }
+
+    // Log error (but timeout is normal - means no changes occurred)
+    if (error.code === 'ECONNABORTED') {
+      this.log.debug('Long-poll timeout (no changes) - reconnecting');
+    } else {
+      const errorMsg = error.response ? error.response.status : (error.code || error.message);
+      this.log.warn(`Long-poll error: ${errorMsg} - reconnecting`);
+    }
+
+    // Reconnect after delay
+    if (this.longPollActive && !this.isShuttingDown) {
+      setTimeout(() => this.doLongPoll(), config.LONG_POLLING.RECONNECT_DELAY);
     }
   });
+};
+
+// Process status update from NPU
+ModeLightingPlatform.prototype.handleStatusUpdate = function(xmlData) {
+  parseXMLString(xmlData, (err, result) => {
+    if (err) {
+      this.log.error(`Long-poll XML parse error: ${err.message}`);
+      return;
+    }
+
+    try {
+      // Extract channel states
+      const channelStates = this.extractChannelStates(result);
+
+      // Update all affected channel accessories
+      this.updateChannelAccessories(channelStates);
+
+      // TODO: Future - extract and handle button press events
+      // const buttonEvents = this.extractButtonEvents(result);
+      // this.handleButtonEvents(buttonEvents);
+
+    } catch (parseError) {
+      this.log.error(`Long-poll data extraction error: ${parseError.message}`);
+    }
+  });
+};
+
+// Extract channel brightness states from status XML
+ModeLightingPlatform.prototype.extractChannelStates = function(result) {
+  const channelStates = {};
+
+  try {
+    if (result.Evolution && result.Evolution.Devices && result.Evolution.Devices[0]) {
+      const devices = result.Evolution.Devices[0];
+
+      if (devices.EDIN8ChDimmerModule) {
+        const modules = Array.isArray(devices.EDIN8ChDimmerModule)
+          ? devices.EDIN8ChDimmerModule
+          : [devices.EDIN8ChDimmerModule];
+
+        modules.forEach(module => {
+          if (module.Elements && module.Elements[0] && module.Elements[0].SlavePowerChannel) {
+            const channelArray = Array.isArray(module.Elements[0].SlavePowerChannel)
+              ? module.Elements[0].SlavePowerChannel
+              : [module.Elements[0].SlavePowerChannel];
+
+            channelArray.forEach(channel => {
+              const loadId = channel.$ && channel.$.LoadId ? channel.$.LoadId : null;
+              const state = channel.State && channel.State[0] ? channel.State[0] : null;
+
+              if (loadId && state !== null) {
+                // Convert DMX value to percentage
+                const percent = dmx2pct[state] || 0;
+                const channelNum = String(loadId).padStart(3, '0');
+                channelStates[channelNum] = percent;
+              }
+            });
+          }
+        });
+      }
+    }
+  } catch (error) {
+    this.log.error(`Error extracting channel states: ${error.message}`);
+  }
+
+  return channelStates;
+};
+
+// Update channel accessories with new states
+ModeLightingPlatform.prototype.updateChannelAccessories = function(channelStates) {
+  this.accessoryInstances.forEach(instance => {
+    if (instance.mode !== 'channel') {
+      return; // Skip scene accessories
+    }
+
+    const newState = channelStates[instance.channel];
+    if (newState === undefined) {
+      return; // No state update for this channel
+    }
+
+    // Check if state actually changed
+    if (instance.lastKnownState === newState) {
+      return; // No change
+    }
+
+    this.log.info(`${instance.name}: State change detected (${instance.lastKnownState}% -> ${newState}%)`);
+
+    // Update HomeKit with the new state
+    if (instance.controlService) {
+      // Update power state
+      const isOn = newState > 0;
+      const wasOn = instance.lastKnownState > 0;
+      if (isOn !== wasOn) {
+        instance.controlService.getCharacteristic(Characteristic.On).updateValue(isOn);
+      }
+
+      // Update brightness if dimmable and changed
+      if (instance.dimmable && newState !== instance.lastKnownState) {
+        instance.controlService.getCharacteristic(Characteristic.Brightness).updateValue(newState);
+      }
+
+      // Update cached brightness
+      if (newState > 0) {
+        instance.cachedBrightness = newState;
+      }
+    }
+
+    // Update last known state
+    instance.lastKnownState = newState;
+  });
+};
+
+// Stop long-polling
+ModeLightingPlatform.prototype.stopLongPolling = function() {
+  this.log.info('Stopping NPU long-polling');
+  this.longPollActive = false;
+
+  // Cancel current connection if active
+  if (this.longPollConnection) {
+    this.longPollConnection.cancel('Stopping long-polling');
+    this.longPollConnection = null;
+  }
 };
 
 ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, accessoryConfig) {
@@ -465,10 +656,7 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
     .setCharacteristic(Characteristic.Model, config.DEVICE_INFO.MODEL)
     .setCharacteristic(Characteristic.SerialNumber, "123456");
 
-  // Start polling after accessory is fully configured
-  if (accessoryInstance.startPolling) {
-    accessoryInstance.startPolling();
-  }
+  // Long-polling is now handled at platform level - no per-accessory polling needed
 };
 
 // ============================================================================
@@ -565,10 +753,7 @@ function ModeLightingAccessory(log, config) {
     this.log.info(`Custom network settings - Timeout: ${this.requestTimeout}ms, Max Retries: ${this.maxRetries}, Retry Delay: ${this.retryDelay}ms`);
   }
 
-  // Initialize adaptive polling for detecting external state changes
-  this.pollInterval = null;
-  this.lastActivityTime = Date.now();
-  this.currentPollingSpeed = 'slow';
+  // State tracking for long-polling updates (managed at platform level)
   this.lastKnownState = null;
 }
 
@@ -704,11 +889,6 @@ ModeLightingAccessory.prototype = {
     }
   },
   setPowerState: function(powerOn, callback) {
-    // Mark activity to trigger fast polling (for channels)
-    if (this.markActivity) {
-      this.markActivity();
-    }
-
     const settings = {
       requestTimeout: this.requestTimeout,
       maxRetries: this.maxRetries,
@@ -728,16 +908,7 @@ ModeLightingAccessory.prototype = {
           }, 100);
         }
 
-        // After activating scene, trigger polling on channel accessories
-        // (Scene accessories don't need polling since they're stateless)
-        if (!error && this.platform) {
-          // Wait a moment for the scene to apply before polling channels
-          setTimeout(() => {
-            if (this.platform.triggerChannelFastPolling) {
-              this.platform.triggerChannelFastPolling();
-            }
-          }, 500);
-        }
+        // Long-polling will automatically detect state changes from scene activation
       }, settings);
     } else {
       // Channel mode: set brightness
@@ -775,11 +946,6 @@ ModeLightingAccessory.prototype = {
     }, settings);
   },
   setBrightness: function(brightness, callback) {
-    // Mark activity to trigger fast polling
-    if (this.markActivity) {
-      this.markActivity();
-    }
-
     if (this.mode === 'scene') {
       // Scene mode doesn't support brightness
       callback(new Error('Brightness not supported in scene mode'));
@@ -835,101 +1001,13 @@ ModeLightingAccessory.prototype = {
         .on('get', this.getBrightness.bind(this));
     }
 
-    // Store reference to control service for polling updates
+    // Store reference to control service for state updates
     this.controlService = controlService;
 
-    // Start polling after accessory is fully configured
-    if (this.startPolling) {
-      this.startPolling();
-    }
+    // Long-polling is now handled at platform level - no per-accessory polling needed
 
     return [informationService, controlService];
   }
 };
 
-// Polling methods - must be added AFTER the prototype object assignment above
-ModeLightingAccessory.prototype.startPolling = function() {
-  if (this.mode === 'scene') {
-    // Scene mode doesn't use polling (stateless switches)
-    return;
-  }
-
-  this.log.info(`${this.name}: Starting state polling`);
-  this.scheduleNextPoll();
-};
-
-ModeLightingAccessory.prototype.scheduleNextPoll = function() {
-  if (this.pollInterval) {
-    clearTimeout(this.pollInterval);
-  }
-
-  // Determine polling speed based on recent activity
-  const timeSinceActivity = Date.now() - this.lastActivityTime;
-  const shouldPollFast = timeSinceActivity < config.POLLING.FAST_DURATION;
-  const interval = shouldPollFast ? config.POLLING.FAST_INTERVAL : config.POLLING.SLOW_INTERVAL;
-
-  // Log speed changes
-  const newSpeed = shouldPollFast ? 'fast' : 'slow';
-  if (newSpeed !== this.currentPollingSpeed) {
-    this.log.info(`${this.name}: Switching to ${newSpeed} polling (${interval}ms)`);
-    this.currentPollingSpeed = newSpeed;
-  }
-
-  this.pollInterval = setTimeout(() => {
-    this.pollState();
-  }, interval);
-};
-
-ModeLightingAccessory.prototype.pollState = function() {
-  const settings = {
-    requestTimeout: this.requestTimeout,
-    maxRetries: this.maxRetries,
-    retryDelay: this.retryDelay
-  };
-
-  // Poll the current state
-  ModeGetChannel(this.log, this.NPU_IP, this.channel, (error, percent) => {
-    if (!error) {
-      // Check if state changed
-      if (this.lastKnownState !== null && this.lastKnownState !== percent) {
-        this.log.info(`${this.name}: External state change detected (${this.lastKnownState}% -> ${percent}%)`);
-
-        // Update HomeKit with the new state
-        if (this.controlService) {
-          // Update power state
-          const isOn = percent > 0;
-          const wasOn = this.lastKnownState > 0;
-          if (isOn !== wasOn) {
-            this.controlService.getCharacteristic(Characteristic.On).updateValue(isOn);
-          }
-
-          // Update brightness if it changed
-          if (this.dimmable && percent !== this.lastKnownState) {
-            this.controlService.getCharacteristic(Characteristic.Brightness).updateValue(percent);
-          }
-
-          // Update cached brightness
-          if (percent > 0) {
-            this.cachedBrightness = percent;
-          }
-        }
-      }
-
-      this.lastKnownState = percent;
-    }
-
-    // Schedule next poll
-    this.scheduleNextPoll();
-  }, settings);
-};
-
-ModeLightingAccessory.prototype.markActivity = function() {
-  this.lastActivityTime = Date.now();
-};
-
-ModeLightingAccessory.prototype.stopPolling = function() {
-  if (this.pollInterval) {
-    clearTimeout(this.pollInterval);
-    this.pollInterval = null;
-  }
-};
+// Polling methods removed - now using platform-level long-polling for real-time state updates

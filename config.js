@@ -28,15 +28,15 @@ module.exports = {
     MODEL: 'NPU v1.3.2.1'
   },
 
-  // Polling configuration for detecting external state changes
-  POLLING: {
-    // Fast polling interval after activity (milliseconds)
-    FAST_INTERVAL: 2000,
+  // Long-polling configuration for real-time state updates
+  LONG_POLLING: {
+    // Long-poll timeout in milliseconds (how long to wait for NPU state change)
+    TIMEOUT: 100,
 
-    // Slow polling interval during idle (milliseconds)
-    SLOW_INTERVAL: 30000,
+    // Timeout for axios request (slightly longer than longpoll to account for network delay)
+    REQUEST_TIMEOUT: 110000,
 
-    // How long to maintain fast polling after activity (milliseconds)
-    FAST_DURATION: 60000
+    // Delay before reconnecting after timeout/error (milliseconds)
+    RECONNECT_DELAY: 1000
   }
 };
