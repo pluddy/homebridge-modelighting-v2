@@ -5,20 +5,79 @@
     "port": 51826,
     "pin": "031-45-154"
   },
-  "description": "Configuration file for Controlling Mode Lighting NPU Scenes",
-  "accessories": [{
-      "accessory": "modelighting",
-      "NPU_IP": "192.168.0.1",
-      "name": "Living Room",
-      "on_scene": "001",
-      "off_scene": "002"
+  "description": "Sample configuration for homebridge-modelighting-v2",
+  "platforms": [
+    {
+      "_comment": "RECOMMENDED: Platform plugin with auto-discovery - automatically finds all channels and scenes",
+      "platform": "ModelightingV2Platform",
+      "name": "Mode Lighting",
+      "NPU_IP": "192.168.0.1"
     },
     {
-      "accessory": "modelighting",
+      "_comment": "Platform with filters - only expose specific channels and scenes",
+      "platform": "ModelightingV2Platform",
+      "name": "Mode Lighting Filtered",
+      "NPU_IP": "192.168.0.2",
+      "discoverChannels": true,
+      "discoverScenes": true,
+      "channelFilter": [9, 10, 15, 16],
+      "sceneFilter": [24, 25, 38, 42],
+      "requestTimeout": 5000,
+      "maxRetries": 10,
+      "retryDelay": 500
+    }
+  ],
+  "accessories": [
+    {
+      "_comment": "OPTIONAL: Manual accessory configuration - use if you prefer manual control",
+      "_comment2": "Channel mode examples - direct DMX control with dimming support",
+      "accessory": "ModelightingV2",
       "NPU_IP": "192.168.0.1",
-      "name": "Kitchen",
-      "on_scene": "003",
-      "off_scene": "004"
+      "name": "Living Room Ceiling",
+      "channel": "001",
+      "dimmable": true,
+      "defaultBrightness": 100
+    },
+    {
+      "accessory": "ModelightingV2",
+      "NPU_IP": "192.168.0.1",
+      "name": "Kitchen Table",
+      "channel": "002",
+      "dimmable": true,
+      "defaultBrightness": 80
+    },
+    {
+      "accessory": "ModelightingV2",
+      "NPU_IP": "192.168.0.1",
+      "name": "Bedroom Lamp",
+      "channel": "003",
+      "dimmable": false
+    },
+    {
+      "accessory": "ModelightingV2",
+      "NPU_IP": "192.168.0.2",
+      "name": "Garage Light",
+      "channel": "001",
+      "dimmable": true,
+      "defaultBrightness": 100,
+      "requestTimeout": 10000,
+      "maxRetries": 15,
+      "retryDelay": 1000
+    },
+    {
+      "_comment": "Scene mode examples - activate pre-configured scenes (not dimmable)",
+      "accessory": "ModelightingV2",
+      "NPU_IP": "192.168.0.1",
+      "name": "Evening Scene",
+      "on_scene": "42",
+      "off_scene": "0"
+    },
+    {
+      "accessory": "ModelightingV2",
+      "NPU_IP": "192.168.0.1",
+      "name": "Party Mode",
+      "on_scene": "100",
+      "off_scene": "0"
     }
   ]
 }
