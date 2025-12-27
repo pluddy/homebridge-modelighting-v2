@@ -430,14 +430,23 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
     .on('set', accessoryInstance.setPowerState.bind(accessoryInstance))
     .on('get', accessoryInstance.getPowerState.bind(accessoryInstance));
 
-  // Add brightness control if dimmable (only for channel mode)
-  if (accessoryInstance.dimmable && accessoryInstance.mode === 'channel') {
-    controlService
-      .getCharacteristic(Characteristic.Brightness)
-      .removeAllListeners('set')
-      .removeAllListeners('get')
-      .on('set', accessoryInstance.setBrightness.bind(accessoryInstance))
-      .on('get', accessoryInstance.getBrightness.bind(accessoryInstance));
+  // Add or remove brightness control based on dimmable status (only for channel mode)
+  if (accessoryInstance.mode === 'channel') {
+    if (accessoryInstance.dimmable) {
+      // Add brightness characteristic if dimmable
+      controlService
+        .getCharacteristic(Characteristic.Brightness)
+        .removeAllListeners('set')
+        .removeAllListeners('get')
+        .on('set', accessoryInstance.setBrightness.bind(accessoryInstance))
+        .on('get', accessoryInstance.getBrightness.bind(accessoryInstance));
+    } else {
+      // Remove brightness characteristic if not dimmable (switched mode)
+      const brightnessChar = controlService.getCharacteristic(Characteristic.Brightness);
+      if (brightnessChar) {
+        controlService.removeCharacteristic(brightnessChar);
+      }
+    }
   }
 
   // Ensure AccessoryInformation service exists
