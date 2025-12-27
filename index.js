@@ -412,11 +412,26 @@ ModeLightingPlatform.prototype.configureAccessoryInstance = function(accessory, 
 
   // Determine which service type to use based on mode
   const ServiceType = accessoryInstance.mode === 'scene' ? Service.Switch : Service.Lightbulb;
+  const WrongServiceType = accessoryInstance.mode === 'scene' ? Service.Lightbulb : Service.Switch;
 
-  // Get or add the control service
+  // Remove wrong service type if it exists (in case mode changed)
+  const wrongService = accessory.getService(WrongServiceType);
+  if (wrongService) {
+    this.log.info(`Removing wrong service type for ${accessoryConfig.name}`);
+    accessory.removeService(wrongService);
+  }
+
+  // Get or add the correct control service
   let controlService = accessory.getService(ServiceType);
   if (!controlService) {
     controlService = accessory.addService(ServiceType, accessoryConfig.name);
+  }
+
+  // Update display name if it changed
+  if (accessory.displayName !== accessoryConfig.name) {
+    this.log.info(`Updating display name for ${accessory.displayName} to ${accessoryConfig.name}`);
+    accessory.displayName = accessoryConfig.name;
+    accessory._associatedHAPAccessory.displayName = accessoryConfig.name;
   }
 
   // Store reference to control service for polling updates
