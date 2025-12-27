@@ -30,10 +30,10 @@ module.exports = {
 
   // Long-polling configuration for real-time state updates
   LONG_POLLING: {
-    // Long-poll timeout in milliseconds (how long to wait for NPU state change)
-    TIMEOUT: 100,
+    // Long-poll timeout in seconds (how long to wait for NPU state change)
+    TIMEOUT_SECONDS: 100,
 
-    // Timeout for axios request (slightly longer than longpoll to account for network delay)
+    // Timeout for axios request in milliseconds (slightly longer than longpoll to account for network delay)
     REQUEST_TIMEOUT: 110000,
 
     // Delay before reconnecting after timeout/error (milliseconds)

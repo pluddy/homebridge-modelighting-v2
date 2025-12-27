@@ -414,7 +414,7 @@ ModeLightingPlatform.prototype.doLongPoll = function() {
   const source = CancelToken.source();
   this.longPollConnection = source;
 
-  const url = `http://${this.NPU_IP}/xml-dump?nocrlf=true&longpoll=${config.LONG_POLLING.TIMEOUT}&what=status&where=/`;
+  const url = `http://${this.NPU_IP}/xml-dump?nocrlf=true&longpoll=${config.LONG_POLLING.TIMEOUT_SECONDS}&what=status&where=/`;
 
   axios.get(url, {
     headers: {
