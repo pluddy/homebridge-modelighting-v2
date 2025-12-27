@@ -377,16 +377,6 @@ ModeLightingPlatform.prototype.addAccessory = function(accessoryConfig) {
   return uuid;
 };
 
-// Trigger burst polling on all scene accessories to update their states
-ModeLightingPlatform.prototype.triggerSceneBurstPolling = function() {
-  this.accessoryInstances.forEach(instance => {
-    if (instance.mode === 'scene' && instance.startBurstPolling) {
-      // Don't pass expected state - let each scene check its own state
-      instance.startBurstPolling();
-    }
-  });
-};
-
 // Trigger fast polling on all channel accessories (called when scenes are activated)
 ModeLightingPlatform.prototype.triggerChannelFastPolling = function() {
   this.accessoryInstances.forEach(instance => {
@@ -691,51 +681,6 @@ function ModeActivateScene(log, NPU_IP, scene, callback, settings, trycount = 0)
   });
 }
 
-function ModeGetScene(log, NPU_IP, scene, callback, settings, trycount = 0) {
-  trycount++;
-
-  axios.get(`http://${NPU_IP}${config.NPU.STATUS_ENDPOINT}${scene}`, {
-    headers: {
-      'Content-Type': 'application/xml'
-    },
-    timeout: settings.requestTimeout,
-    validateStatus: function (status) {
-      return status === 200;
-    }
-  })
-  .then(function(response) {
-    parseXMLString(response.data, function (err, result) {
-      if (err) {
-        log.error(`NPU: ${NPU_IP}, getScene: ${scene}, XML parse error: ${err.message}`);
-        callback(err);
-        return;
-      }
-
-      try {
-        const active = result.Evolution.Scene[0].Active[0];
-        log.info(`NPU: ${NPU_IP}, getScene: ${scene}, active: ${active}, try: ${trycount}`);
-        // Active is "1" for active, "0" for inactive
-        callback(null, active === "1");
-      } catch (parseError) {
-        log.error(`NPU: ${NPU_IP}, getScene: ${scene}, data extraction error: ${parseError.message}`);
-        callback(new Error('Invalid response structure'));
-      }
-    });
-  })
-  .catch(function(error) {
-    if (trycount < settings.maxRetries) {
-      const errorMsg = error.response ? error.response.status : (error.code || error.message);
-      log.debug(`Retry: ${trycount}, NPU: ${NPU_IP}, getScene: ${scene}, error: ${errorMsg}`);
-      setTimeout(ModeGetScene, settings.retryDelay, log, NPU_IP, scene, callback, settings, trycount);
-    } else {
-      const errorMsg = error.response ? error.response.status : (error.code || error.message);
-      log.error(`FAIL! NPU: ${NPU_IP}, getScene: ${scene}, error: ${errorMsg}`);
-      callback(error);
-    }
-  });
-}
-
-
 ModeLightingAccessory.prototype = {
   getPowerState: function(callback) {
     const settings = {
@@ -745,8 +690,8 @@ ModeLightingAccessory.prototype = {
     };
 
     if (this.mode === 'scene') {
-      // Scene mode: check if the on_scene is currently active
-      ModeGetScene(this.log, this.NPU_IP, this.on_scene, callback, settings);
+      // Scene mode (stateless): always return false - these act as momentary buttons
+      callback(null, false);
     } else {
       // Channel mode: check if brightness is greater than 0
       ModeGetChannel(this.log, this.NPU_IP, this.channel, (error, percent) => {
@@ -771,20 +716,23 @@ ModeLightingAccessory.prototype = {
     };
 
     if (this.mode === 'scene') {
-      // Scene mode: activate the appropriate scene
-      const scene = powerOn ? this.on_scene : this.off_scene;
-      ModeActivateScene(this.log, this.NPU_IP, scene, (error) => {
+      // Scene mode (stateless): always activate the on_scene, regardless of powerOn state
+      // This makes scene switches act like buttons - they just recall the scene
+      ModeActivateScene(this.log, this.NPU_IP, this.on_scene, (error) => {
         callback(error);
 
-        // After activating scene, trigger polling on ALL accessories
-        // - Scene accessories: burst polling to update on/off state (mutual exclusivity)
-        // - Channel accessories: fast polling to detect scene-induced changes
-        if (!error && this.platform) {
-          // Wait a moment for the scene to apply before polling
+        // Immediately set switch back to "off" for stateless behavior
+        if (!error && this.controlService) {
           setTimeout(() => {
-            if (this.platform.triggerSceneBurstPolling) {
-              this.platform.triggerSceneBurstPolling();
-            }
+            this.controlService.getCharacteristic(Characteristic.On).updateValue(false);
+          }, 100);
+        }
+
+        // After activating scene, trigger polling on channel accessories
+        // (Scene accessories don't need polling since they're stateless)
+        if (!error && this.platform) {
+          // Wait a moment for the scene to apply before polling channels
+          setTimeout(() => {
             if (this.platform.triggerChannelFastPolling) {
               this.platform.triggerChannelFastPolling();
             }
@@ -902,7 +850,7 @@ ModeLightingAccessory.prototype = {
 // Polling methods - must be added AFTER the prototype object assignment above
 ModeLightingAccessory.prototype.startPolling = function() {
   if (this.mode === 'scene') {
-    // Scene mode uses burst polling only after activation (not continuous)
+    // Scene mode doesn't use polling (stateless switches)
     return;
   }
 
@@ -984,65 +932,4 @@ ModeLightingAccessory.prototype.stopPolling = function() {
     clearTimeout(this.pollInterval);
     this.pollInterval = null;
   }
-};
-
-// Burst polling for scenes - poll a few times after activation to detect state change
-ModeLightingAccessory.prototype.startBurstPolling = function() {
-  if (this.mode !== 'scene') {
-    return;
-  }
-
-  // Initialize burst poll count
-  this.burstPollCount = 0;
-  this.burstPollMaxAttempts = 5; // Poll up to 5 times
-
-  this.log.debug(`${this.name}: Starting burst polling`);
-  this.doBurstPoll();
-};
-
-ModeLightingAccessory.prototype.doBurstPoll = function() {
-  if (this.burstPollCount >= this.burstPollMaxAttempts) {
-    return;
-  }
-
-  this.burstPollCount++;
-
-  const settings = {
-    requestTimeout: this.requestTimeout,
-    maxRetries: this.maxRetries,
-    retryDelay: this.retryDelay
-  };
-
-  // Poll the scene state
-  ModeGetScene(this.log, this.NPU_IP, this.on_scene, (error, isActive) => {
-    if (!error) {
-      // Check if state changed from what HomeKit currently shows
-      if (this.controlService) {
-        const currentState = this.controlService.getCharacteristic(Characteristic.On).value;
-
-        if (currentState !== isActive) {
-          // State changed - update HomeKit and log it
-          this.log.info(`${this.name}: Scene state changed to ${isActive ? 'on' : 'off'}`);
-          this.controlService.getCharacteristic(Characteristic.On).updateValue(isActive);
-
-          // Stop burst polling since we detected the change
-          return;
-        }
-      }
-
-      // State hasn't changed yet - schedule another poll if we have attempts left
-      if (this.burstPollCount < this.burstPollMaxAttempts) {
-        setTimeout(() => {
-          this.doBurstPoll();
-        }, 1000); // Poll every 1 second during burst
-      }
-    } else {
-      // Error during poll - try again if we have attempts left
-      if (this.burstPollCount < this.burstPollMaxAttempts) {
-        setTimeout(() => {
-          this.doBurstPoll();
-        }, 1000);
-      }
-    }
-  }, settings);
 };
