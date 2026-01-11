@@ -866,6 +866,50 @@ function ModeActivateScene(log, NPU_IP, scene, callback, settings, trycount = 0)
   });
 }
 
+function ModeGetScene(log, NPU_IP, scene, callback, settings, trycount = 0) {
+  trycount++;
+
+  axios.get(`http://${NPU_IP}${config.NPU.STATUS_ENDPOINT}${scene}`, {
+    headers: {
+      'Content-Type': 'application/xml'
+    },
+    timeout: settings.requestTimeout,
+    validateStatus: function (status) {
+      return status === 200;
+    }
+  })
+  .then(function(response) {
+    parseXMLString(response.data, function (err, result) {
+      if (err) {
+        log.error(`NPU: ${NPU_IP}, getScene: ${scene}, XML parse error: ${err.message}`);
+        callback(err);
+        return;
+      }
+
+      try {
+        const active = result.Evolution.Scene[0].Active[0];
+        log.info(`NPU: ${NPU_IP}, getScene: ${scene}, active: ${active}, try: ${trycount}`);
+        // Active is "1" for active, "0" for inactive
+        callback(null, active === "1");
+      } catch (parseError) {
+        log.error(`NPU: ${NPU_IP}, getScene: ${scene}, data extraction error: ${parseError.message}`);
+        callback(new Error('Invalid response structure'));
+      }
+    });
+  })
+  .catch(function(error) {
+    if (trycount < settings.maxRetries) {
+      const errorMsg = error.response ? error.response.status : (error.code || error.message);
+      log.debug(`Retry: ${trycount}, NPU: ${NPU_IP}, getScene: ${scene}, error: ${errorMsg}`);
+      setTimeout(ModeGetScene, settings.retryDelay, log, NPU_IP, scene, callback, settings, trycount);
+    } else {
+      const errorMsg = error.response ? error.response.status : (error.code || error.message);
+      log.error(`FAIL! NPU: ${NPU_IP}, getScene: ${scene}, error: ${errorMsg}`);
+      callback(error);
+    }
+  });
+}
+
 ModeLightingAccessory.prototype = {
   getPowerState: function(callback) {
     const settings = {
@@ -875,8 +919,8 @@ ModeLightingAccessory.prototype = {
     };
 
     if (this.mode === 'scene') {
-      // Scene mode (stateless): always return false - these act as momentary buttons
-      callback(null, false);
+      // Scene mode: check if the on_scene is currently active
+      ModeGetScene(this.log, this.NPU_IP, this.on_scene, callback, settings);
     } else {
       // Channel mode: check if brightness is greater than 0
       ModeGetChannel(this.log, this.NPU_IP, this.channel, (error, percent) => {
@@ -896,17 +940,10 @@ ModeLightingAccessory.prototype = {
     };
 
     if (this.mode === 'scene') {
-      // Scene mode (stateless): always activate the on_scene, regardless of powerOn state
-      // This makes scene switches act like buttons - they just recall the scene
-      ModeActivateScene(this.log, this.NPU_IP, this.on_scene, (error) => {
+      // Scene mode: activate the appropriate scene based on powerOn state
+      const scene = powerOn ? this.on_scene : this.off_scene;
+      ModeActivateScene(this.log, this.NPU_IP, scene, (error) => {
         callback(error);
-
-        // Immediately set switch back to "off" for stateless behavior
-        if (!error && this.controlService) {
-          setTimeout(() => {
-            this.controlService.getCharacteristic(Characteristic.On).updateValue(false);
-          }, 100);
-        }
 
         // Long-polling will automatically detect state changes from scene activation
       }, settings);
